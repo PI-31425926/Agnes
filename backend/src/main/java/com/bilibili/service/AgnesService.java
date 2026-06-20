@@ -11,18 +11,25 @@ import com.bilibili.utils.AesUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
+import org.springframework.http.*;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
 @Service
@@ -134,7 +141,7 @@ public class AgnesService {
         throw new RuntimeException("未登录");
     }
 
-    private List<ChatMessage> getHistory(String key) {
+    public List<ChatMessage> getHistory(String key) {
         List<Object> raw = redisTemplate.opsForList().range(key, 0, -1);
         if (raw == null) return new ArrayList<>();
         return raw.stream()
@@ -160,4 +167,216 @@ public class AgnesService {
             throw new RuntimeException("无法解密API密钥");
         }
     }
+
+    public void chatStreamReal(final String userMessage, SseEmitter emitter, String userId, String userApiKey) {
+        CompletableFuture.runAsync(() -> {
+            String fullReply = null;
+            String status = "SUCCESS";
+            // 用于日志记录的原始用户消息（不含文档拼接内容）
+            String originalUserMessage = userMessage;
+            try {
+                System.out.println("[Stream] 开始处理, userId=" + userId);
+
+                // -------------------- 文件暂存拼接 --------------------
+                String fileKey = "file:content:" + userId;
+                String fileContent = (String) redisTemplate.opsForValue().get(fileKey);
+                String userMessage2 = null;
+                if (fileContent != null && !fileContent.isEmpty()) {
+                    // 用户输入为空时使用默认问题
+                    String userQuestion = (userMessage != null && !userMessage.trim().isEmpty())
+                            ? userMessage : "请总结以下文档内容";
+                    userMessage2 = userQuestion + "\n\n文档内容：\n" + fileContent;
+                }
+                // ---------------------------------------------------------
+
+                // 1. 获取历史（使用传入的 userId）
+                String historyKey = "chat:history:" + userId;
+                List<ChatMessage> history = getHistory(historyKey);
+
+                List<AgnesChatRequest.Message> messages = new ArrayList<>();
+                for (ChatMessage msg : history) {
+                    messages.add(new AgnesChatRequest.Message(msg.getRole(), msg.getContent()));
+                }
+                messages.add(new AgnesChatRequest.Message("user", userMessage2)); // 使用拼接后的消息
+
+                // 2. 构建请求头（使用传入的 apiKey）
+                HttpHeaders headers = new HttpHeaders();
+                headers.setContentType(MediaType.APPLICATION_JSON);
+                headers.setBearerAuth(userApiKey);
+
+                Map<String, Object> bodyMap = new HashMap<>();
+                bodyMap.put("model", model);
+                bodyMap.put("messages", messages);
+                bodyMap.put("stream", true);
+
+                ObjectMapper mapper = new ObjectMapper();
+                byte[] bodyBytes = mapper.writeValueAsBytes(bodyMap);
+
+                // 3. 执行流式请求
+                StringBuilder fullReplyBuilder = new StringBuilder();
+                restTemplate.execute(apiUrl, HttpMethod.POST,
+                        request -> {
+                            request.getHeaders().putAll(headers);
+                            request.getBody().write(bodyBytes);
+                        },
+                        clientHttpResponse -> {
+                            InputStream inputStream = clientHttpResponse.getBody();
+                            BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream));
+                            String line;
+                            while ((line = reader.readLine()) != null) {
+                                if (line.startsWith("data: ")) {
+                                    String data = line.substring(6);
+                                    if ("[DONE]".equals(data.trim())) break;
+                                    try {
+                                        JsonNode node = mapper.readTree(data);
+                                        JsonNode choices = node.path("choices");
+                                        if (choices.isArray() && choices.size() > 0) {
+                                            JsonNode delta = choices.get(0).path("delta");
+                                            String content = delta.path("content").asText();
+                                            if (!content.isEmpty()) {
+                                                fullReplyBuilder.append(content);
+                                                emitter.send(SseEmitter.event()
+                                                        .data(content)
+                                                        .name("message"));
+                                            }
+                                        }
+                                    } catch (Exception ignored) {
+                                    }
+                                }
+                            }
+                            emitter.send(SseEmitter.event().data("[DONE]").name("message"));
+                            return fullReplyBuilder.toString();
+                        });
+
+                fullReply = fullReplyBuilder.toString();
+
+                // 4. 更新历史（记录拼接后的用户消息，以保持上下文一致性）
+                if (fullReply == null || fullReply.isEmpty()) {
+                    fullReply = "No response";
+                    status = "FAILED";
+                } else {
+                    history.add(new ChatMessage("user", userMessage2));
+                    history.add(new ChatMessage("assistant", fullReply));
+                    if (history.size() > MAX_HISTORY_MESSAGES) {
+                        history = history.subList(history.size() - MAX_HISTORY_MESSAGES, history.size());
+                    }
+                    saveHistory(historyKey, history);
+                }
+
+                // 5. 对话成功后清除暂存文件（无论成功失败可选，推荐成功时清除）
+                if ("SUCCESS".equals(status)) {
+                    redisTemplate.delete(fileKey);   // 清除 Redis 中的文件内容
+                }
+
+                emitter.complete();
+                System.out.println("[Stream] 完成");
+
+            } catch (Exception e) {
+                status = "FAILED";
+                fullReply = "请求失败：" + e.getMessage();
+                System.err.println("[Stream] 异常: " + e.getMessage());
+                emitter.completeWithError(e);
+            } finally {
+                // 日志记录使用原始用户消息（不含文档内容），便于审计且避免日志过长
+                logService.log("CHAT", "用户对话（流式）", originalUserMessage, status,
+                        status.equals("SUCCESS") ? fullReply : null);
+            }
+        });
+    }
+
+    /*public void chatStreamReal(String userMessage, SseEmitter emitter, String userId, String userApiKey) {
+        CompletableFuture.runAsync(() -> {
+            String fullReply = null;
+            String status = "SUCCESS";
+            try {
+                System.out.println("[Stream] 开始处理, userId=" + userId);
+
+                // 1. 获取历史（使用传入的 userId）
+                String historyKey = "chat:history:" + userId;
+                List<ChatMessage> history = getHistory(historyKey);
+
+                List<AgnesChatRequest.Message> messages = new ArrayList<>();
+                for (ChatMessage msg : history) {
+                    messages.add(new AgnesChatRequest.Message(msg.getRole(), msg.getContent()));
+                }
+                messages.add(new AgnesChatRequest.Message("user", userMessage));
+
+                // 2. 构建请求头（使用传入的 apiKey）
+                HttpHeaders headers = new HttpHeaders();
+                headers.setContentType(MediaType.APPLICATION_JSON);
+                headers.setBearerAuth(userApiKey);
+
+                Map<String, Object> bodyMap = new HashMap<>();
+                bodyMap.put("model", model);
+                bodyMap.put("messages", messages);
+                bodyMap.put("stream", true);
+
+                ObjectMapper mapper = new ObjectMapper();
+                byte[] bodyBytes = mapper.writeValueAsBytes(bodyMap);
+
+                // 3. 执行流式请求
+                StringBuilder fullReplyBuilder = new StringBuilder();
+                restTemplate.execute(apiUrl, HttpMethod.POST,
+                        request -> {
+                            request.getHeaders().putAll(headers);
+                            request.getBody().write(bodyBytes);
+                        },
+                        clientHttpResponse -> {
+                            InputStream inputStream = clientHttpResponse.getBody();
+                            BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream));
+                            String line;
+                            while ((line = reader.readLine()) != null) {
+                                if (line.startsWith("data: ")) {
+                                    String data = line.substring(6);
+                                    if ("[DONE]".equals(data.trim())) break;
+                                    try {
+                                        JsonNode node = mapper.readTree(data);
+                                        JsonNode choices = node.path("choices");
+                                        if (choices.isArray() && choices.size() > 0) {
+                                            JsonNode delta = choices.get(0).path("delta");
+                                            String content = delta.path("content").asText();
+                                            if (!content.isEmpty()) {
+                                                fullReplyBuilder.append(content);
+                                                emitter.send(SseEmitter.event()
+                                                        .data(content)
+                                                        .name("message"));
+                                            }
+                                        }
+                                    } catch (Exception ignored) {}
+                                }
+                            }
+                            emitter.send(SseEmitter.event().data("[DONE]").name("message"));
+                            return fullReplyBuilder.toString();
+                        });
+
+                fullReply = fullReplyBuilder.toString();
+
+                // 4. 更新历史
+                if (fullReply == null || fullReply.isEmpty()) {
+                    fullReply = "No response";
+                    status = "FAILED";
+                } else {
+                    history.add(new ChatMessage("user", userMessage));
+                    history.add(new ChatMessage("assistant", fullReply));
+                    if (history.size() > MAX_HISTORY_MESSAGES) {
+                        history = history.subList(history.size() - MAX_HISTORY_MESSAGES, history.size());
+                    }
+                    saveHistory(historyKey, history);
+                }
+
+                emitter.complete();
+                System.out.println("[Stream] 完成");
+
+            } catch (Exception e) {
+                status = "FAILED";
+                fullReply = "请求失败：" + e.getMessage();
+                System.err.println("[Stream] 异常: " + e.getMessage());
+                emitter.completeWithError(e);
+            } finally {
+                // 日志记录使用传入的 userId
+                logService.log("CHAT", "用户对话（流式）", userMessage, status,
+                        status.equals("SUCCESS") ? fullReply : null);
+            }
+        });
+    }*/
 }

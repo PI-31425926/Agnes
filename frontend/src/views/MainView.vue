@@ -37,15 +37,36 @@
           <div v-for="(msg, idx) in chatMessages" :key="idx" :class="['message-row', msg.role]">
             <div class="bubble">
               <span class="content">{{ msg.content }}</span>
+              <!-- 朗读按钮（仅AI消息显示） -->
+              <button
+                  v-if="msg.role === 'assistant'"
+                  class="speak-btn"
+                  @click="toggleSpeak(idx, msg.content)"
+                  :title="speakingIndex === idx ? '停止朗读' : '朗读此消息'"
+              >
+                {{ speakingIndex === idx ? '⏹️' : '🔊' }}
+              </button>
             </div>
           </div>
         </div>
         <div class="input-area">
-          <input
-              v-model="chatInput"
-              @keyup.enter="sendChat"
-              placeholder="输入消息..."
-          />
+          <!-- 文件上传按钮 -->
+          <label class="upload-file-btn" title="上传文件">
+            📎
+            <input type="file" @change="handleFileUpload" accept=".txt,.doc,.docx,.pdf,.xls,.xlsx" hidden />
+          </label>
+          <div class="input-wrapper">
+            <!-- 文件标签 -->
+            <div v-if="hasUploadedFile" class="file-tag">
+              📄 {{ uploadedFileName }}
+              <button class="remove-file-btn" @click="clearUploadedFile">✕</button>
+            </div>
+            <input
+                v-model="chatInput"
+                @keyup.enter="sendChat"
+                :placeholder="hasUploadedFile ? '输入问题（留空默认提问）' : '输入消息...'"
+            />
+          </div>
           <button @click="sendChat">
             <span class="btn-icon">▶</span>
           </button>
@@ -58,6 +79,7 @@
           <div class="prompt-area">
             <textarea
                 v-model="text2imgPrompt"
+                @keyup.enter="generateText2img"
                 placeholder="请输入图片描述，例如：白毛红瞳双马尾萝莉"
                 rows="3"
             ></textarea>
@@ -83,6 +105,18 @@
             <span>👆 输入描述后点击生成</span>
           </div>
         </div>
+        <!-- 文生图历史 -->
+        <div v-if="imageHistory.length > 0" class="image-history">
+          <h4>最近生成</h4>
+          <div class="history-grid">
+            <div v-for="(item, idx) in imageHistory" :key="idx" class="history-item">
+              <img :src="item.url" :alt="item.prompt" />
+              <span class="history-type">{{ item.type === 'text2img' ? '文生图' : '图生图' }}</span>
+              <span class="history-prompt">{{ item.prompt }}</span>
+              <a :href="item.url" target="_blank">查看原图</a>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- 图生图界面 -->
@@ -91,7 +125,7 @@
           <div class="upload-row">
             <label class="upload-btn">
               📁 选择图片
-              <input type="file" accept="image/*" @change="handleFileUpload" hidden />
+              <input type="file" accept="image/*" @change="handleImageUpload" hidden />
             </label>
             <div v-if="uploadedImagePreview" class="preview-box">
               <img :src="uploadedImagePreview" class="preview-img" />
@@ -101,6 +135,7 @@
           <div class="prompt-area">
             <textarea
                 v-model="img2imgPrompt"
+                @keyup.enter="generateImg2img"
                 placeholder="描述想要的修改，例如：让物体变成哑光黑色，保留原有构图"
                 rows="2"
             ></textarea>
@@ -128,6 +163,18 @@
           </div>
           <div v-else class="empty-state">
             <span>🖼️ 上传图片并输入描述</span>
+          </div>
+        </div>
+        <!-- 图生图历史 -->
+        <div v-if="imageHistory.length > 0" class="image-history">
+          <h4>最近生成</h4>
+          <div class="history-grid">
+            <div v-for="(item, idx) in imageHistory" :key="idx" class="history-item">
+              <img :src="item.url" :alt="item.prompt" />
+              <span class="history-type">{{ item.type === 'text2img' ? '文生图' : '图生图' }}</span>
+              <span class="history-prompt">{{ item.prompt }}</span>
+              <a :href="item.url" target="_blank">查看原图</a>
+            </div>
           </div>
         </div>
       </div>
@@ -219,7 +266,277 @@ const chatMessages = ref([])
 const chatInput = ref('')
 const chatBox = ref(null)
 
+// ==================== 文件上传 ====================
+const hasUploadedFile = ref(false)
+const uploadedFileName = ref('')
+//const isUploading = ref(false)
+
+// TTS 自动朗读相关
+// TTS 自动朗读（缓冲句子）
+let ttsBuffer = ''             // 文本缓冲区
+let ttsQueue = []              // 语音队列
+let isTtsSpeaking = false      // 是否正在朗读
+let ttsFlushTimer = null       // 定时刷新定时器
+
 async function sendChat() {
+  const text = chatInput.value.trim();
+  if (!text) return;
+
+  // 停止任何正在进行的语音朗读
+  stopTts()
+
+  chatMessages.value.push({ role: 'user', content: text });
+  chatInput.value = '';
+  const aiMessage = { role: 'assistant', content: '' };
+  chatMessages.value.push(aiMessage);
+  const aiIndex = chatMessages.value.length - 1;
+
+  try {
+    const token = localStorage.getItem('token');
+    console.log('[Stream] 发送请求，token存在:', !!token); // 调试日志
+
+    const response = await fetch('/api/chat/stream', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ message: text })
+    });
+
+    console.log('[Stream] 响应状态:', response.status); // 调试日志
+
+    if (!response.ok) {
+      // 非 200 响应，读取错误文本
+      const errorText = await response.text();
+      console.error('[Stream] 错误响应体:', errorText);
+      chatMessages.value[aiIndex].content = `请求失败 (${response.status}): ${errorText}`;
+      return;
+    }
+
+    // 正常流式读取
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop();
+
+      for (const line of lines) {
+        if (line.startsWith('data:')) {
+          const data = line.substring(5).trim();
+          if (data === '[DONE]') {
+            // 流结束，强制输出缓冲区剩余文本
+            flushTtsBuffer(true)
+            console.log('[Stream] 流结束');
+            return;
+          }
+          chatMessages.value[aiIndex].content += data;
+          // 将文本块加入语音队列
+          //speakChunk(data)
+          addToTtsBuffer(data)   // 改为缓冲
+          await nextTick();
+          scrollToBottom();
+        }
+      }
+    }
+  } catch (e) {
+    console.error('[Stream] 网络异常:', e);
+    chatMessages.value[aiIndex].content = '请求失败：' + e.message;
+  } finally {
+    flushTtsBuffer(true)  // 确保缓冲区清空
+  }
+}
+
+// 将文本片段加入缓冲区
+function addToTtsBuffer(chunk) {
+  ttsBuffer += chunk
+  // 启动一个延迟检查，如果短时间无新数据则自动刷新
+  if (ttsFlushTimer) clearTimeout(ttsFlushTimer)
+  ttsFlushTimer = setTimeout(() => flushTtsBuffer(false), 300) // 300ms无新数据则刷新
+}
+
+// 刷新缓冲区，按句子边界切分并朗读
+function flushTtsBuffer(force) {
+  if (ttsFlushTimer) {
+    clearTimeout(ttsFlushTimer)
+    ttsFlushTimer = null
+  }
+  if (ttsBuffer.length === 0) return
+
+  // 如果强制刷新，或者缓冲区包含句子分隔符，或者长度超过阈值
+  const sentenceEnders = /[。！？；\n,.!?;]/g
+  if (force || sentenceEnders.test(ttsBuffer) || ttsBuffer.length > 80) {
+    // 切分句子（保留分隔符在句子末尾）
+    const parts = ttsBuffer.split(/(?<=[。！？；\n,.!?;])/g)
+    // 最后一个可能是不完整的句子，保留在缓冲区
+    if (!force && parts.length > 1 && !sentenceEnders.test(parts[parts.length - 1])) {
+      ttsBuffer = parts.pop()
+    } else {
+      ttsBuffer = ''
+    }
+    // 过滤空串并加入语音队列
+    for (const part of parts) {
+      const trimmed = part.trim()
+      if (trimmed) {
+        const utterance = new SpeechSynthesisUtterance(trimmed)
+        utterance.rate = 1
+        utterance.volume = 1
+        ttsQueue.push(utterance)
+      }
+    }
+    // 如果还未播放，启动播放
+    if (!isTtsSpeaking) {
+      playNextInQueue()
+    }
+  }
+}
+
+// 依次播放队列中的语音
+function playNextInQueue() {
+  if (ttsQueue.length === 0) {
+    isTtsSpeaking = false
+    return
+  }
+  isTtsSpeaking = true
+  const utterance = ttsQueue.shift()
+  utterance.onend = () => {
+    playNextInQueue()
+  }
+  utterance.onerror = () => {
+    playNextInQueue()  // 出错跳过
+  }
+  speechSynthesis.speak(utterance)
+}
+
+// 停止朗读并清空所有状态
+function stopTts() {
+  speechSynthesis.cancel()
+  ttsQueue = []
+  isTtsSpeaking = false
+  ttsBuffer = ''
+  if (ttsFlushTimer) {
+    clearTimeout(ttsFlushTimer)
+    ttsFlushTimer = null
+  }
+}
+
+function scrollToBottom() {
+  if (chatBox.value) {
+    chatBox.value.scrollTop = chatBox.value.scrollHeight;
+  }
+}
+
+// 文件上传相关
+const isUploading = ref(false)
+
+/*async function handleFileUpload(e) {
+  const file = e.target.files[0]
+  if (!file) return
+
+  // 简单校验扩展名
+  const allowedExtensions = ['.txt', '.doc', '.docx', '.pdf','.xls', '.xlsx']
+  const fileName = file.name.toLowerCase()
+  const isValid = allowedExtensions.some(ext => fileName.endsWith(ext))
+  if (!isValid) {
+    alert('仅支持txt、Word、PDF、Excel文件')
+    return
+  }
+
+  const formData = new FormData()
+  formData.append('file', file)
+
+  isUploading.value = true
+  try {
+    const res = await axios.post('/api/chat/upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+    const extractedText = res.data
+
+    // 将提取的文本填充到输入框，或者直接发送
+    //chatInput.value = `请根据以下文档内容回答问题：\n\n${extractedText}`
+    // 如果想自动发送，取消下面注释：
+    // sendChat()
+  } catch (e) {
+    alert('文件上传失败：' + (e.response?.data || e.message))
+  } finally {
+    isUploading.value = false
+    // 清空文件选择器，以便重复上传同一文件
+    const fileInput = document.querySelector('input[type="file"]')
+    if (fileInput) fileInput.value = ''
+  }
+}*/
+
+async function handleFileUpload(e) {
+  const file = e.target.files[0]
+  if (!file) return
+
+  const allowedExtensions = ['.txt', '.doc', '.docx', '.pdf', '.xls', '.xlsx']
+  const fileName = file.name.toLowerCase()
+  const isValid = allowedExtensions.some(ext => fileName.endsWith(ext))
+  if (!isValid) {
+    alert('仅支持txt、Word、PDF、Excel文件')
+    return
+  }
+
+  const formData = new FormData()
+  formData.append('file', file)
+
+  isUploading.value = true
+  try {
+    const res = await axios.post('/api/chat/upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+    if (res.status === 200) {
+      hasUploadedFile.value = true
+      uploadedFileName.value = file.name
+    } else {
+      alert('上传失败')
+    }
+  } catch (e) {
+    alert('文件上传失败：' + (e.response?.data || e.message))
+  } finally {
+    isUploading.value = false
+    const fileInput = document.querySelector('input[type="file"]')
+    if (fileInput) fileInput.value = ''
+  }
+}
+
+// 清除上传文件
+async function clearUploadedFile() {
+  try {
+    await axios.delete('/api/chat/upload')
+  } catch (e) {}
+  hasUploadedFile.value = false
+  uploadedFileName.value = ''
+}
+
+// ==================== TTS 朗读 ====================
+const speakingIndex = ref(-1)   // 当前朗读的消息索引，-1表示未朗读
+
+function toggleSpeak(idx, text) {
+  // 如果点击的是正在朗读的消息，则停止
+  if (speakingIndex.value === idx) {
+    speechSynthesis.cancel()
+    speakingIndex.value = -1
+    return
+  }
+  // 否则停止任何正在朗读的内容，然后开始朗读当前消息
+  speechSynthesis.cancel()
+  const utterance = new SpeechSynthesisUtterance(text)
+  // 可选：设置默认语音（中文需系统支持）
+  utterance.onstart = () => { speakingIndex.value = idx }
+  utterance.onend = () => { speakingIndex.value = -1 }
+  utterance.onerror = () => { speakingIndex.value = -1 }
+  speechSynthesis.speak(utterance)
+}
+
+/*async function sendChat() {
   const text = chatInput.value.trim()
   if (!text) return
   chatMessages.value.push({ role: 'user', content: text })
@@ -237,7 +554,7 @@ async function sendChat() {
   if (chatBox.value) {
     chatBox.value.scrollTop = chatBox.value.scrollHeight
   }
-}
+}*/
 
 watch(currentTab, async (tab) => {
   if (tab === 'chat') {
@@ -245,6 +562,28 @@ watch(currentTab, async (tab) => {
     if (chatBox.value) {
       chatBox.value.scrollTop = chatBox.value.scrollHeight
     }
+  }
+})
+
+import { onMounted } from 'vue'
+
+onMounted(async () => {
+  try {
+    const res = await axios.get('/api/chat/history')
+    if (res.data && res.data.length > 0) {
+      res.data.forEach(msg => {
+        chatMessages.value.push({
+          role: msg.role,
+          content: msg.content
+        })
+      })
+      await nextTick()
+      scrollToBottom()
+      stopTts()
+      speechSynthesis.cancel()
+    }
+  } catch (e) {
+    console.error('加载历史失败', e)
   }
 })
 
@@ -285,7 +624,7 @@ const img2imgGenerating = ref(false)
 const uploadedImagePreview = ref(null)
 const uploadedImageBase64 = ref(null)
 
-function handleFileUpload(e) {
+function handleImageUpload(e) {
   const file = e.target.files[0]
   if (!file) return
   const reader = new FileReader()
@@ -327,6 +666,35 @@ async function generateImg2img() {
     img2imgGenerating.value = false
   }
 }
+
+// 图片历史列表
+const imageHistory = ref([])
+
+// 加载图片历史
+async function loadImageHistory() {
+  try {
+    const res = await axios.get('/api/image/history')
+    if (res.data) {
+      imageHistory.value = res.data
+    }
+  } catch (e) {
+    console.error('加载图片历史失败', e)
+  }
+}
+
+// 监听标签切换，当进入文生图或图生图标签时加载历史
+watch(currentTab, (newTab) => {
+  if (newTab === 'text2img' || newTab === 'img2img') {
+    loadImageHistory()
+  }
+})
+
+// 首次加载时，如果当前标签是图片相关，也加载历史（处理刷新情况）
+onMounted(() => {
+  if (currentTab.value === 'text2img' || currentTab.value === 'img2img') {
+    loadImageHistory()
+  }
+})
 
 // ==================== 视频生成（队列模式） ====================
 const videoPrompt = ref('')
@@ -1036,5 +1404,120 @@ onUnmounted(() => {
   color: #ff5252;
   cursor: pointer;
   font-size: 1rem;
+}
+
+.image-history {
+  margin-top: 20px;
+}
+.image-history h4 {
+  color: #0ff;
+  margin-bottom: 10px;
+}
+.history-grid {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.history-item {
+  width: 120px;
+  background: rgba(0,255,255,0.05);
+  border: 1px solid rgba(0,255,255,0.2);
+  border-radius: 8px;
+  padding: 6px;
+  text-align: center;
+}
+.history-item img {
+  width: 100%;
+  height: 80px;
+  object-fit: cover;
+  border-radius: 4px;
+}
+.history-type {
+  display: block;
+  color: #00c9ff;
+  font-size: 0.7rem;
+}
+.history-prompt {
+  display: block;
+  color: #ccc;
+  font-size: 0.75rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.history-item a {
+  color: #0ff;
+  font-size: 0.7rem;
+}
+
+/* 朗读按钮 */
+.speak-btn {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  background: rgba(0, 255, 255, 0.1);
+  border: 1px solid rgba(0, 255, 255, 0.3);
+  color: #0ff;
+  font-size: 0.7rem;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s;
+  backdrop-filter: blur(4px);
+}
+.speak-btn:hover {
+  background: rgba(0, 255, 255, 0.25);
+  box-shadow: 0 0 8px #0ff;
+}
+
+.upload-file-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(0,255,255,0.1);
+  border: 1px solid rgba(0,255,255,0.3);
+  color: #0ff;
+  font-size: 1.1rem;
+  cursor: pointer;
+  transition: all 0.3s;
+  margin-right: 8px;
+}
+.upload-file-btn:hover {
+  background: rgba(0,255,255,0.25);
+  box-shadow: 0 0 10px #0ff;
+}
+
+.input-wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.file-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(0,255,255,0.1);
+  border: 1px solid rgba(0,255,255,0.3);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 0.8rem;
+  color: #0ff;
+  width: fit-content;
+}
+.remove-file-btn {
+  background: none;
+  border: none;
+  color: #ff5252;
+  cursor: pointer;
+  font-size: 0.9rem;
+  padding: 0 2px;
 }
 </style>

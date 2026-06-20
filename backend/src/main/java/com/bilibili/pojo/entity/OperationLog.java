@@ -22,12 +22,14 @@ public class OperationLog {
     @Column(length = 1000)
     private String description;       // 操作描述，如“对话输入前20字...”、“生成图片提示词...”
 
-    @Column(length = 500)
+    //@Column(length = 500)
+    @Column(columnDefinition = "TEXT")
     private String params;            // 可选，记录请求参数摘要
 
     private String resultStatus;      // SUCCESS / FAILED
 
-    @Column(length = 1000)
+    //@Column(length = 1000)
+    @Column(columnDefinition = "TEXT")
     private String resultDetail;      // 结果摘要，如“图片URL”或错误信息
 
     @Column(nullable = false)
