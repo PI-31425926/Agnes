@@ -4,10 +4,12 @@ import com.bilibili.mapper.UserRepository;
 import com.bilibili.pojo.dto.AgnesImageRequest;
 import com.bilibili.pojo.dto.AgnesImageResponse;
 import com.bilibili.pojo.dto.AgnesImageToImageRequest;
+import com.bilibili.pojo.dto.ImageHistoryItem;
 import com.bilibili.pojo.entity.User;
 import com.bilibili.utils.AesUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -17,9 +19,9 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Map;
+import java.time.Duration;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 public class AgnesImageService {
@@ -41,6 +43,9 @@ public class AgnesImageService {
 
     @Autowired
     private LogService logService;
+
+    @Autowired
+    private RedisTemplate redisTemplate;
 
     private final RestTemplate restTemplate;
 
@@ -79,6 +84,8 @@ public class AgnesImageService {
             AgnesImageResponse respBody = response.getBody();
             if (respBody != null && respBody.getData() != null && !respBody.getData().isEmpty()) {
                 url = respBody.getData().get(0).getUrl();
+                // 记录到 Redis
+                addToImageHistory("text2img", prompt, url);
             } else {
                 throw new Exception("Image generation failed: no data returned");
             }
@@ -120,6 +127,8 @@ public class AgnesImageService {
             AgnesImageResponse respBody = response.getBody();
             if (respBody != null && respBody.getData() != null && !respBody.getData().isEmpty()) {
                 url = respBody.getData().get(0).getUrl();
+                // 记录到 Redis
+                addToImageHistory("img2img", prompt, url);
             } else {
                 throw new Exception("Image-to-image generation failed: no data returned");
             }
@@ -133,69 +142,41 @@ public class AgnesImageService {
         return url;
     }
 
+    private static final String IMAGE_HISTORY_KEY_PREFIX = "image:history:";
+    private static final int MAX_HISTORY_ITEMS = 10;
+    private static final long IMAGE_HISTORY_TTL_MINUTES = 60;
 
-    /*public String generateImage(String prompt, String size) throws Exception {
-        // 1. 请求头
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        String apiKey = getCurrentUserApiKey();
-        headers.setBearerAuth(apiKey);
-
-        // 2. 请求体
-        AgnesImageRequest body = new AgnesImageRequest();
-        body.setModel(imageModel);
-        body.setPrompt(prompt);
-        body.setSize(size);
-
-        Map<String, Object> extraBody = new HashMap<>();
-        extraBody.put("response_format", "url");
-        body.setExtraBody(extraBody);
-
-        HttpEntity<AgnesImageRequest> entity = new HttpEntity<>(body, headers);
-
-        // 3. 发送请求
-        ResponseEntity<AgnesImageResponse> response = restTemplate.postForEntity(
-                imageApiUrl, entity, AgnesImageResponse.class
-        );
-
-        // 4. 提取第一张图片的 URL
-        AgnesImageResponse respBody = response.getBody();
-        if (respBody != null && respBody.getData() != null && !respBody.getData().isEmpty()) {
-            return respBody.getData().get(0).getUrl();
-        }
-        throw new Exception("Image generation failed: no data returned");
+    private void addToImageHistory(String type, String prompt, String url) {
+        String userId = getCurrentUserId();
+        String key = IMAGE_HISTORY_KEY_PREFIX + userId;
+        ImageHistoryItem item = new ImageHistoryItem(type, prompt, url, System.currentTimeMillis());
+        redisTemplate.opsForList().leftPush(key, item);
+        // 修剪长度
+        redisTemplate.opsForList().trim(key, 0, MAX_HISTORY_ITEMS - 1);
+        // 设置过期时间
+        redisTemplate.expire(key, Duration.ofMinutes(IMAGE_HISTORY_TTL_MINUTES));
     }
 
-    public String generateImageFromImage(String prompt, String size, String imageBase64) throws Exception {
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        String apiKey = getCurrentUserApiKey();
-        headers.setBearerAuth(apiKey);
-
-        AgnesImageToImageRequest body = new AgnesImageToImageRequest();
-        body.setModel(imageModel);  // 图生图也用同样模型
-        body.setPrompt(prompt);
-        body.setSize(size);
-
-        Map<String, Object> extraBody = new HashMap<>();
-        extraBody.put("response_format", "url");
-        // 图片数组，里面是一个 data URI
-        extraBody.put("image", Collections.singletonList(imageBase64));
-        body.setExtraBody(extraBody);
-
-        HttpEntity<AgnesImageToImageRequest> entity = new HttpEntity<>(body, headers);
-
-        ResponseEntity<AgnesImageResponse> response = restTemplate.postForEntity(
-                imageApiUrl, entity, AgnesImageResponse.class
-        );
-
-        AgnesImageResponse respBody = response.getBody();
-        if (respBody != null && respBody.getData() != null && !respBody.getData().isEmpty()) {
-            return respBody.getData().get(0).getUrl();
-        }
-        throw new Exception("Image-to-image generation failed: no data returned");
+    // 获取当前用户的图片历史列表
+    public List<ImageHistoryItem> getImageHistory() {
+        String userId = getCurrentUserId();
+        String key = IMAGE_HISTORY_KEY_PREFIX + userId;
+        List<Object> raw = redisTemplate.opsForList().range(key, 0, -1);
+        if (raw == null) return new ArrayList<>();
+        return raw.stream()
+                .map(obj -> (ImageHistoryItem) obj)
+                .collect(Collectors.toList());
     }
-*/
+
+    // 从 SecurityContext 获取当前用户手机号（图片生成在主线程，可用）
+    private String getCurrentUserId() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.isAuthenticated()) {
+            return auth.getName();
+        }
+        throw new RuntimeException("未登录");
+    }
+
     private String getCurrentUserApiKey() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         String phone = auth.getName();

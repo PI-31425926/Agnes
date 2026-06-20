@@ -2,12 +2,13 @@ package com.bilibili.controller;
 
 import com.bilibili.pojo.dto.ImageGenerationRequest;
 import com.bilibili.pojo.dto.ImageGenerationResponse;
+import com.bilibili.pojo.dto.ImageHistoryItem;
 import com.bilibili.pojo.dto.ImageToImageRequest;
 import com.bilibili.service.AgnesImageService;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/image")
@@ -37,5 +38,10 @@ public class ImageController {
         ImageGenerationResponse response = new ImageGenerationResponse();
         response.setUrl(url);
         return response;
+    }
+
+    @GetMapping("/history")
+    public ResponseEntity<List<ImageHistoryItem>> getImageHistory() {
+        return ResponseEntity.ok(agnesImageService.getImageHistory());
     }
 }

@@ -20,7 +20,8 @@ spring:
     driver-class-name: com.mysql.cj.jdbc.Driver
   jpa:
     hibernate:
-      ddl-auto: validate       # 首次启动自动建表，生产建议改为 validate
+      #ddl-auto: validate       # 首次启动自动建表，生产建议改为 validate
+      ddl-auto: update
     show-sql: false            # 调试时打印 SQL，可关闭
     properties:
       hibernate:
