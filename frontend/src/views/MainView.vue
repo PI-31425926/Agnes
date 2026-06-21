@@ -435,43 +435,6 @@ function scrollToBottom() {
 // 文件上传相关
 const isUploading = ref(false)
 
-/*async function handleFileUpload(e) {
-  const file = e.target.files[0]
-  if (!file) return
-
-  // 简单校验扩展名
-  const allowedExtensions = ['.txt', '.doc', '.docx', '.pdf','.xls', '.xlsx']
-  const fileName = file.name.toLowerCase()
-  const isValid = allowedExtensions.some(ext => fileName.endsWith(ext))
-  if (!isValid) {
-    alert('仅支持txt、Word、PDF、Excel文件')
-    return
-  }
-
-  const formData = new FormData()
-  formData.append('file', file)
-
-  isUploading.value = true
-  try {
-    const res = await axios.post('/api/chat/upload', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' }
-    })
-    const extractedText = res.data
-
-    // 将提取的文本填充到输入框，或者直接发送
-    //chatInput.value = `请根据以下文档内容回答问题：\n\n${extractedText}`
-    // 如果想自动发送，取消下面注释：
-    // sendChat()
-  } catch (e) {
-    alert('文件上传失败：' + (e.response?.data || e.message))
-  } finally {
-    isUploading.value = false
-    // 清空文件选择器，以便重复上传同一文件
-    const fileInput = document.querySelector('input[type="file"]')
-    if (fileInput) fileInput.value = ''
-  }
-}*/
-
 async function handleFileUpload(e) {
   const file = e.target.files[0]
   if (!file) return

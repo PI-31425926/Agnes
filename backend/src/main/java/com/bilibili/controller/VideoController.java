@@ -1,6 +1,7 @@
 package com.bilibili.controller;
 
-import com.bilibili.common.context.RequestContext;
+import cn.dev33.satoken.stp.StpUtil;
+import com.bilibili.mapper.UserRepository;
 import com.bilibili.pojo.dto.*;
 import com.bilibili.pojo.entity.User;
 import com.bilibili.service.AgnesVideoService;
@@ -9,8 +10,6 @@ import com.bilibili.utils.VideoTaskManager;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.HttpServerErrorException;
@@ -29,6 +28,9 @@ public class VideoController {
 
     @Autowired
     private AesUtil aesUtil;
+
+    @Autowired
+    private UserRepository userRepository;
 
     public VideoController(AgnesVideoService agnesVideoService, VideoTaskManager taskManager) {
         this.agnesVideoService = agnesVideoService;
@@ -78,15 +80,21 @@ public class VideoController {
     }
 
     private String getCurrentUserApiKeyPlain() {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth != null && auth.getPrincipal() instanceof User user) {
-            try {
-                return aesUtil.decrypt(user.getApiKey());
-            } catch (Exception e) {
-                throw new RuntimeException("无法解密用户API密钥");
-            }
+        // 1. 检查是否已登录
+        if (!StpUtil.isLogin()) {
+            throw new RuntimeException("未登录");
         }
-        throw new RuntimeException("未登录");
+        // 2. 获取当前登录用户的手机号
+        String phone = StpUtil.getLoginIdAsString();
+        // 3. 从数据库查询用户
+        User user = userRepository.findByPhone(phone)
+                .orElseThrow(() -> new RuntimeException("用户不存在"));
+        // 4. 解密 API 密钥并返回
+        try {
+            return aesUtil.decrypt(user.getApiKey());
+        } catch (Exception e) {
+            throw new RuntimeException("无法解密用户API密钥", e);
+        }
     }
 
     // 获取所有任务（前端展示用）
@@ -114,14 +122,7 @@ public class VideoController {
 
     // 提取当前用户手机号
     private String getCurrentUserId() {
-        // 优先从 ThreadLocal 获取
-        String user = RequestContext.getCurrentUser();
-        if (user != null) return user;
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth != null && auth.isAuthenticated()) {
-            return auth.getName();
-        }
-        throw new RuntimeException("用户未登录");
+        return StpUtil.getLoginIdAsString();
     }
 
     /**

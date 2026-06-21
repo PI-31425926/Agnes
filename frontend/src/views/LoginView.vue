@@ -40,6 +40,9 @@
           <span v-if="!loading">{{ isLogin ? '登录' : '注册' }}</span>
           <span v-else>⏳ 处理中...</span>
         </button>
+
+        <!-- 游客模式按钮 -->
+        <button class="guest-btn" @click="enterGuest">👤 游客模式</button>
       </div>
 
       <p class="switch-text" @click="toggleMode">
@@ -78,6 +81,10 @@ function toggleMode() {
   errorMsg.value = ''
 }
 
+function enterGuest() {
+  router.push('/guest')
+}
+
 async function submit() {
   errorMsg.value = ''
   if (!phone.value || !/^1\d{10}$/.test(phone.value)) {
@@ -95,6 +102,7 @@ async function submit() {
     const res = await axios.post(url, { phone: phone.value, apiKey: apiKey.value })
     if (isLogin.value) {
       localStorage.setItem('token', res.data.token)
+      localStorage.setItem('role', res.data.role)
       router.push('/')
     } else {
       alert('注册成功，请登录')
@@ -349,5 +357,25 @@ h1 {
 
 .api-hint a:hover {
   text-shadow: 0 0 10px #0ff;
+}
+
+/* 原有样式保持不变，添加游客按钮样式 */
+.guest-btn {
+  width: 100%;
+  padding: 10px;
+  margin-top: 12px;
+  border: 1px solid rgba(0, 255, 255, 0.4);
+  border-radius: 25px;
+  background: transparent;
+  color: #0ff;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: all 0.3s;
+  box-shadow: 0 0 10px rgba(0, 255, 255, 0.15);
+}
+
+.guest-btn:hover {
+  background: rgba(0, 255, 255, 0.1);
+  box-shadow: 0 0 20px rgba(0, 255, 255, 0.5);
 }
 </style>

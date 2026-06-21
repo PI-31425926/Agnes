@@ -1,5 +1,6 @@
 package com.bilibili.service;
 
+import cn.dev33.satoken.stp.StpUtil;
 import com.bilibili.mapper.UserRepository;
 import com.bilibili.pojo.dto.AgnesVideoCreateRequest;
 import com.bilibili.pojo.dto.AgnesVideoCreateResponse;
@@ -9,17 +10,11 @@ import com.bilibili.utils.AesUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
 @Service
 public class AgnesVideoService {
-
-    /*@Value("${agnes.api-key}")
-    private String apiKey;*/
-
     @Value("${agnes.video-api-url}")
     private String videoApiUrl;
 
@@ -51,6 +46,7 @@ public class AgnesVideoService {
         AgnesVideoCreateResponse result = null;
         String status = "SUCCESS";
         String errorMsg = null;
+        String userId = StpUtil.getLoginIdAsString();   // 确保已登录
         try {
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
@@ -79,7 +75,7 @@ public class AgnesVideoService {
             // 记录日志
             String description = String.format("文生视频：%dx%d, %d帧, %dfps", width, height, numFrames, frameRate);
             String resultDetail = result != null ? result.getVideoId() : errorMsg;
-            logService.log("VIDEO_GENERATION", description, prompt, status, resultDetail);
+            logService.log("VIDEO_GENERATION", description, prompt, status, resultDetail,userId);
         }
         return result;
     }
@@ -101,47 +97,8 @@ public class AgnesVideoService {
         return response.getBody();
     }
 
-    // 创建视频任务
-    /*public AgnesVideoCreateResponse createVideoTask(String prompt, int width, int height, int numFrames, int frameRate) {
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        String apiKey = getCurrentUserApiKey();
-        headers.setBearerAuth(apiKey);
-
-        AgnesVideoCreateRequest body = new AgnesVideoCreateRequest();
-        body.setModel(videoModel);
-        body.setPrompt(prompt);
-        body.setWidth(width);
-        body.setHeight(height);
-        body.setNumFrames(numFrames);
-        body.setFrameRate(frameRate);
-
-        HttpEntity<AgnesVideoCreateRequest> entity = new HttpEntity<>(body, headers);
-
-        ResponseEntity<AgnesVideoCreateResponse> response = restTemplate.postForEntity(
-                videoApiUrl, entity, AgnesVideoCreateResponse.class);
-
-        return response.getBody();
-    }
-
-    // 查询视频状态
-    public AgnesVideoStatusResponse queryVideoStatus(String videoId) {
-        HttpHeaders headers = new HttpHeaders();
-        String apiKey = getCurrentUserApiKey();
-        headers.setBearerAuth(apiKey);
-
-        HttpEntity<Void> entity = new HttpEntity<>(headers);
-
-        String url = videoStatusUrl + "?video_id=" + videoId;
-        ResponseEntity<AgnesVideoStatusResponse> response = restTemplate.exchange(
-                url, HttpMethod.GET, entity, AgnesVideoStatusResponse.class);
-
-        return response.getBody();
-    }*/
-
     private String getCurrentUserApiKey() {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        String phone = auth.getName();
+        String phone = StpUtil.getLoginIdAsString();
         User user = userRepository.findByPhone(phone)
                 .orElseThrow(() -> new RuntimeException("用户不存在"));
         try {

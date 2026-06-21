@@ -1,13 +1,10 @@
 package com.bilibili.service;
 
 import com.bilibili.common.context.RequestContext;
-import com.bilibili.common.context.UserContext;
 import com.bilibili.mapper.OperationLogRepository;
 import com.bilibili.pojo.entity.OperationLog;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Async;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -21,11 +18,27 @@ public class LogService {
     /**
      * 异步记录操作日志，避免阻塞主流程
      */
-    @Async
+    @Async("taskExecutor")
     public void log(String operationType, String description, String params, String resultStatus, String resultDetail) {
         String username = getCurrentUsername(); // 自动从 RequestContext 获取
+        System.out.println(username);
         OperationLog log = new OperationLog();
         log.setUsername(username);
+        log.setOperationType(operationType);
+        log.setDescription(description);
+        log.setParams(params);
+        log.setResultStatus(resultStatus);
+        log.setResultDetail(resultDetail);
+        log.setCreateTime(LocalDateTime.now());
+        logRepository.save(log);
+    }
+
+    // 新增：显式传入 username 的重载
+    @Async
+    public void log(String operationType, String description, String params,
+                    String resultStatus, String resultDetail, String username) {
+        OperationLog log = new OperationLog();
+        log.setUsername(username != null ? username : "anonymous");
         log.setOperationType(operationType);
         log.setDescription(description);
         log.setParams(params);
@@ -83,10 +96,6 @@ public class LogService {
         // 优先从 ThreadLocal 获取
         String user = RequestContext.getCurrentUser();
         if (user != null) return user;
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth != null && auth.isAuthenticated()) {
-            return auth.getName();  // 用户名即手机号
-        }
         return "anonymous";
     }
 }
