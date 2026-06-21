@@ -1,11 +1,10 @@
 package com.bilibili.controller;
 
+import cn.dev33.satoken.stp.StpUtil;
 import org.apache.tika.Tika;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -51,38 +50,7 @@ public class FileUploadController {
     }
 
     private String getCurrentUserId() {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth != null && auth.isAuthenticated()) {
-            return auth.getName();
-        }
-        throw new RuntimeException("未登录");
+        // 1. 从 Sa-Token 获取当前登录的手机号
+        return StpUtil.getLoginIdAsString();
     }
 }
-
-/*@RestController
-@RequestMapping("/api/chat")
-public class FileUploadController {
-
-    @PostMapping("/upload")
-    public ResponseEntity<String> uploadFile(@RequestParam("file") MultipartFile file) {
-        if (file.isEmpty()) {
-            return ResponseEntity.badRequest().body("文件为空");
-        }
-
-        // 限制文件大小（如 10MB）
-        long maxSize = 10 * 1024 * 1024;
-        if (file.getSize() > maxSize) {
-            return ResponseEntity.badRequest().body("文件过大，最大支持 10MB");
-        }
-
-        try {
-            Tika tika = new Tika();
-            // Tika 自动识别文件类型并提取文本（包括 Excel）
-            String content = tika.parseToString(file.getInputStream());
-            return ResponseEntity.ok(content);
-        } catch (Exception e) {
-            return ResponseEntity.internalServerError()
-                    .body("文件解析失败：" + e.getMessage());
-        }
-    }
-}*/

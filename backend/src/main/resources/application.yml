@@ -49,3 +49,11 @@ aes:
 jwt:
   secret: another-secret-key-another-secret-key
   expiration: 86400000
+
+sa-token:
+  token-name: Authorization      # 从请求头中读取的 Token 名称
+  timeout: 8640000                 # Token 有效期 24 小时 (单位秒)
+  is-read-cookie: false          # 不从 Cookie 读 Token
+  is-read-head: true             # 从请求头读 Token
+  token-prefix: "Bearer"         # 前缀 (前端无需改动)
+  # 其他配置可按需调整

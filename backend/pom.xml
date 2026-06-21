@@ -56,10 +56,10 @@
 			<scope>runtime</scope>
 		</dependency>
 		<!-- Spring Security -->
-		<dependency>
+		<!--<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-security</artifactId>
-		</dependency>
+		</dependency>-->
 		<!-- JWT -->
 		<dependency>
 			<groupId>io.jsonwebtoken</groupId>
@@ -102,6 +102,18 @@
 			<groupId>org.apache.tika</groupId>
 			<artifactId>tika-parsers-standard-package</artifactId>
 			<version>2.9.2</version>
+		</dependency>
+		<!-- Sa-Token 核心 -->
+		<dependency>
+			<groupId>cn.dev33</groupId>
+			<artifactId>sa-token-spring-boot3-starter</artifactId>
+			<version>1.38.0</version>
+		</dependency>
+		<!-- Sa-Token 集成 Redis -->
+		<dependency>
+			<groupId>cn.dev33</groupId>
+			<artifactId>sa-token-redis</artifactId>
+			<version>1.38.0</version>
 		</dependency>
 	</dependencies>
 

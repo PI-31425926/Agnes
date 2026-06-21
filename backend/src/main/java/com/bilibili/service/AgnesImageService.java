@@ -1,5 +1,6 @@
 package com.bilibili.service;
 
+import cn.dev33.satoken.stp.StpUtil;
 import com.bilibili.mapper.UserRepository;
 import com.bilibili.pojo.dto.AgnesImageRequest;
 import com.bilibili.pojo.dto.AgnesImageResponse;
@@ -14,8 +15,6 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
@@ -25,10 +24,6 @@ import java.util.stream.Collectors;
 
 @Service
 public class AgnesImageService {
-
-    /*@Value("${agnes.api-key}")
-    private String apiKey;*/
-
     @Value("${agnes.image-api-url}")
     private String imageApiUrl;
 
@@ -56,6 +51,7 @@ public class AgnesImageService {
     public String generateImage(String prompt, String size) throws Exception {
         String url = null;
         String status = "SUCCESS";
+        String userId = StpUtil.getLoginIdAsString();   // 确保已登录
         try {
             // 1. 请求头
             HttpHeaders headers = new HttpHeaders();
@@ -94,7 +90,7 @@ public class AgnesImageService {
             url = e.getMessage();
             throw e;
         } finally {
-            logService.log("IMAGE_GENERATION", "文生图", prompt, status, url);
+            logService.log("IMAGE_GENERATION", "文生图", prompt, status, url,userId);
         }
         return url;
     }
@@ -102,6 +98,7 @@ public class AgnesImageService {
     public String generateImageFromImage(String prompt, String size, String imageBase64) throws Exception {
         String url = null;
         String status = "SUCCESS";
+        String userId = StpUtil.getLoginIdAsString();   // 确保已登录
         try {
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
@@ -137,7 +134,7 @@ public class AgnesImageService {
             url = e.getMessage();
             throw e;
         } finally {
-            logService.log("IMAGE_TO_IMAGE", "图生图", prompt, status, url);
+            logService.log("IMAGE_TO_IMAGE", "图生图", prompt, status, url,userId);
         }
         return url;
     }
@@ -170,16 +167,12 @@ public class AgnesImageService {
 
     // 从 SecurityContext 获取当前用户手机号（图片生成在主线程，可用）
     private String getCurrentUserId() {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth != null && auth.isAuthenticated()) {
-            return auth.getName();
-        }
-        throw new RuntimeException("未登录");
+        // 1. 从 Sa-Token 获取当前登录的手机号
+        return StpUtil.getLoginIdAsString();
     }
 
     private String getCurrentUserApiKey() {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        String phone = auth.getName();
+        String phone = StpUtil.getLoginIdAsString();
         User user = userRepository.findByPhone(phone)
                 .orElseThrow(() -> new RuntimeException("用户不存在"));
         try {

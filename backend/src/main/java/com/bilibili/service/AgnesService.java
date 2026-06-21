@@ -1,5 +1,6 @@
 package com.bilibili.service;
 
+import cn.dev33.satoken.stp.StpUtil;
 import com.bilibili.common.context.RequestContext;
 import com.bilibili.mapper.UserRepository;
 import com.bilibili.pojo.dto.AgnesChatRequest;
@@ -8,12 +9,11 @@ import com.bilibili.pojo.dto.ChatMessage;
 import com.bilibili.pojo.dto.ChatResponse;
 import com.bilibili.pojo.entity.User;
 import com.bilibili.utils.AesUtil;
+import org.apache.tomcat.util.net.openssl.ciphers.Authentication;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.*;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -34,10 +34,6 @@ import java.util.stream.Collectors;
 
 @Service
 public class AgnesService {
-
-    /*@Value("${agnes.api-key}")
-    private String apiKey;*/
-
     @Value("${agnes.api-url}")
     private String apiUrl;
 
@@ -134,10 +130,6 @@ public class AgnesService {
         // 优先从 ThreadLocal 获取
         String user = RequestContext.getCurrentUser();
         if (user != null) return user;
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth != null && auth.isAuthenticated()) {
-            return auth.getName();  // 手机号
-        }
         throw new RuntimeException("未登录");
     }
 
@@ -157,8 +149,8 @@ public class AgnesService {
 
 
     private String getCurrentUserApiKey() {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        String phone = auth.getName();
+        // 1. 从 Sa-Token 获取当前登录的手机号
+        String phone = StpUtil.getLoginIdAsString();   // 确保已登录，否则会抛 NotLoginException
         User user = userRepository.findByPhone(phone)
                 .orElseThrow(() -> new RuntimeException("用户不存在"));
         try {
@@ -279,104 +271,52 @@ public class AgnesService {
             } finally {
                 // 日志记录使用原始用户消息（不含文档内容），便于审计且避免日志过长
                 logService.log("CHAT", "用户对话（流式）", originalUserMessage, status,
-                        status.equals("SUCCESS") ? fullReply : null);
+                        status.equals("SUCCESS") ? fullReply : null,userId);
             }
         });
     }
 
-    /*public void chatStreamReal(String userMessage, SseEmitter emitter, String userId, String userApiKey) {
-        CompletableFuture.runAsync(() -> {
-            String fullReply = null;
-            String status = "SUCCESS";
-            try {
-                System.out.println("[Stream] 开始处理, userId=" + userId);
+    public String chatWithApiKey(String message, String apiKey, String phone) {
+        String fullReply = null;
+        String status = "SUCCESS";
+        String originalUserMessage = message;
+        try {
+            System.out.println("[Guest Chat] 用户: " + phone);
 
-                // 1. 获取历史（使用传入的 userId）
-                String historyKey = "chat:history:" + userId;
-                List<ChatMessage> history = getHistory(historyKey);
+            // 构建消息：仅当前用户消息，无历史
+            List<AgnesChatRequest.Message> messages = new ArrayList<>();
+            messages.add(new AgnesChatRequest.Message("user", message));
 
-                List<AgnesChatRequest.Message> messages = new ArrayList<>();
-                for (ChatMessage msg : history) {
-                    messages.add(new AgnesChatRequest.Message(msg.getRole(), msg.getContent()));
-                }
-                messages.add(new AgnesChatRequest.Message("user", userMessage));
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.setBearerAuth(apiKey);
 
-                // 2. 构建请求头（使用传入的 apiKey）
-                HttpHeaders headers = new HttpHeaders();
-                headers.setContentType(MediaType.APPLICATION_JSON);
-                headers.setBearerAuth(userApiKey);
+            AgnesChatRequest body = new AgnesChatRequest();
+            body.setModel(model);
+            body.setMessages(messages);
 
-                Map<String, Object> bodyMap = new HashMap<>();
-                bodyMap.put("model", model);
-                bodyMap.put("messages", messages);
-                bodyMap.put("stream", true);
+            HttpEntity<AgnesChatRequest> entity = new HttpEntity<>(body, headers);
+            ResponseEntity<AgnesChatResponse> response = restTemplate.postForEntity(
+                    apiUrl, entity, AgnesChatResponse.class);
 
-                ObjectMapper mapper = new ObjectMapper();
-                byte[] bodyBytes = mapper.writeValueAsBytes(bodyMap);
-
-                // 3. 执行流式请求
-                StringBuilder fullReplyBuilder = new StringBuilder();
-                restTemplate.execute(apiUrl, HttpMethod.POST,
-                        request -> {
-                            request.getHeaders().putAll(headers);
-                            request.getBody().write(bodyBytes);
-                        },
-                        clientHttpResponse -> {
-                            InputStream inputStream = clientHttpResponse.getBody();
-                            BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream));
-                            String line;
-                            while ((line = reader.readLine()) != null) {
-                                if (line.startsWith("data: ")) {
-                                    String data = line.substring(6);
-                                    if ("[DONE]".equals(data.trim())) break;
-                                    try {
-                                        JsonNode node = mapper.readTree(data);
-                                        JsonNode choices = node.path("choices");
-                                        if (choices.isArray() && choices.size() > 0) {
-                                            JsonNode delta = choices.get(0).path("delta");
-                                            String content = delta.path("content").asText();
-                                            if (!content.isEmpty()) {
-                                                fullReplyBuilder.append(content);
-                                                emitter.send(SseEmitter.event()
-                                                        .data(content)
-                                                        .name("message"));
-                                            }
-                                        }
-                                    } catch (Exception ignored) {}
-                                }
-                            }
-                            emitter.send(SseEmitter.event().data("[DONE]").name("message"));
-                            return fullReplyBuilder.toString();
-                        });
-
-                fullReply = fullReplyBuilder.toString();
-
-                // 4. 更新历史
-                if (fullReply == null || fullReply.isEmpty()) {
-                    fullReply = "No response";
-                    status = "FAILED";
-                } else {
-                    history.add(new ChatMessage("user", userMessage));
-                    history.add(new ChatMessage("assistant", fullReply));
-                    if (history.size() > MAX_HISTORY_MESSAGES) {
-                        history = history.subList(history.size() - MAX_HISTORY_MESSAGES, history.size());
-                    }
-                    saveHistory(historyKey, history);
-                }
-
-                emitter.complete();
-                System.out.println("[Stream] 完成");
-
-            } catch (Exception e) {
+            AgnesChatResponse respBody = response.getBody();
+            if (respBody != null && respBody.getChoices() != null && !respBody.getChoices().isEmpty()) {
+                fullReply = respBody.getChoices().get(0).getMessage().getContent();
+            } else {
+                fullReply = "No response";
                 status = "FAILED";
-                fullReply = "请求失败：" + e.getMessage();
-                System.err.println("[Stream] 异常: " + e.getMessage());
-                emitter.completeWithError(e);
-            } finally {
-                // 日志记录使用传入的 userId
-                logService.log("CHAT", "用户对话（流式）", userMessage, status,
-                        status.equals("SUCCESS") ? fullReply : null);
             }
-        });
-    }*/
+
+            return fullReply;
+        } catch (Exception e) {
+            status = "FAILED";
+            fullReply = "请求失败：" + e.getMessage();
+            System.err.println("[Guest Chat] 异常: " + e.getMessage());
+            throw new RuntimeException(e);
+        } finally {
+            // 记录日志（使用随机用户的手机号，便于追踪）
+            logService.log("CHAT", "游客对话", originalUserMessage, status,
+                    status.equals("SUCCESS") ? fullReply : null, phone);
+        }
+    }
 }

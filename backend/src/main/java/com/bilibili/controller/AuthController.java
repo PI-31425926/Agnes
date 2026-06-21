@@ -1,25 +1,18 @@
 package com.bilibili.controller;
 
+import cn.dev33.satoken.stp.StpUtil;
 import com.bilibili.common.context.RequestContext;
 import com.bilibili.mapper.UserRepository;
 import com.bilibili.pojo.entity.User;
 import com.bilibili.service.LogService;
+import com.bilibili.service.UserService;
 import com.bilibili.utils.AesUtil;
-import com.bilibili.utils.JwtUtil;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.authentication.BadCredentialsException;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.userdetails.UserDetails;
-import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
+import java.util.HashMap;
 import java.util.Map;
 
 @RestController
@@ -28,9 +21,7 @@ public class AuthController {
     @Autowired
     private UserRepository userRepository;
     @Autowired
-    private JwtUtil jwtUtil;
-    @Autowired
-    private AuthenticationManager authenticationManager;
+    private UserService userService;
     @Autowired
     private AesUtil aesUtil;
     @Autowired
@@ -68,17 +59,39 @@ public class AuthController {
         } catch (Exception e) {
             return ResponseEntity.status(500).body("解密失败");
         }
-        String token = jwtUtil.generateToken(user); // user 实现了 UserDetails
-        // 记录登录日志（带 IP）
+        // Sa-Token 登录
+        StpUtil.login(phone);
+
+        String token = StpUtil.getTokenValue();
         // 记录登录日志，显式传入手机号和IP
         String ip = getClientIp(request);
         RequestContext.setCurrentUser(phone);  // 临时设置，方便日志记录
         logService.logLogin("LOGIN", "用户登录", "SUCCESS", phone, ip);
-        RequestContext.clear();                 // 登录完成后清除
-        /*String ip = getClientIp(request);
-        logService.logWithIp("LOGIN", "用户登录", null, "SUCCESS", null, ip);*/
+        Map<String, Object> result = new HashMap<>();
+        result.put("token", token);
+        result.put("role", user.getRole());
+        return ResponseEntity.ok(result);
+        /*RequestContext.clear();                 // 登录完成后清除
+        return ResponseEntity.ok(Map.of("token", token));*/
+    }
 
-        return ResponseEntity.ok(Map.of("token", token));
+    @PostMapping("/logout")
+    public ResponseEntity<?> logout() {
+        StpUtil.logout();
+        return ResponseEntity.ok("已退出");
+    }
+
+    @GetMapping("/me")
+    public ResponseEntity<?> currentUser() {
+        String phone = StpUtil.getLoginIdAsString();
+        User user = userService.findByPhone(phone);
+        if (user == null) {
+            return ResponseEntity.status(401).body("用户不存在");
+        }
+        Map<String, Object> map = new HashMap<>();
+        map.put("phone", phone);
+        map.put("role", user.getRole());
+        return ResponseEntity.ok(map);
     }
 
     // 获取客户端真实 IP（考虑代理）

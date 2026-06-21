@@ -1,6 +1,7 @@
 package com.bilibili.config;
 
 import com.bilibili.common.context.RequestContext;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.AsyncConfigurer;
 import org.springframework.scheduling.annotation.EnableAsync;
@@ -12,6 +13,7 @@ import java.util.concurrent.Executor;
 @EnableAsync
 public class AsyncConfig implements AsyncConfigurer {
 
+    @Bean("taskExecutor")
     @Override
     public Executor getAsyncExecutor() {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();

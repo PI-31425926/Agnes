@@ -7,8 +7,6 @@ import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Collectors;
 
 @Component
 public class VideoTaskManager {
@@ -146,75 +144,3 @@ public class VideoTaskManager {
         return true;
     }
 }
-
-/*@Component
-public class VideoTaskManager {
-
-    // 存储所有视频任务，key 为 videoId
-    private final Map<String, VideoTaskInfo> taskMap = new ConcurrentHashMap<>();
-
-    // 添加新任务
-    public void addTask(VideoTaskInfo task) {
-        taskMap.put(task.getVideoId(), task);
-    }
-
-    // 更新任务状态
-    public void updateTask(String videoId, String status, int progress, String url, String error) {
-        VideoTaskInfo task = taskMap.get(videoId);
-        if (task != null) {
-            task.setStatus(status);
-            task.setProgress(progress);
-            if (url != null) task.setUrl(url);
-            if (error != null) task.setError(error);
-        }
-    }
-
-    // 获取所有未完成的任务（用于轮询）
-    public List<VideoTaskInfo> getPendingTasks() {
-        List<VideoTaskInfo> pending = new ArrayList<>();
-        for (VideoTaskInfo task : taskMap.values()) {
-            if (!"completed".equals(task.getStatus()) && !"failed".equals(task.getStatus())) {
-                pending.add(task);
-            }
-        }
-        return pending;
-    }
-
-    // 获取所有任务（前端展示用）
-    public List<VideoTaskInfo> getAllTasks() {
-        return new ArrayList<>(taskMap.values());
-    }
-
-    // 获取指定用户的所有任务
-    public List<VideoTaskInfo> getTasksByUser(String userId) {
-        return taskMap.values().stream()
-                .filter(task -> userId.equals(task.getUserId()))
-                .collect(Collectors.toList());
-    }
-
-    // 删除指定任务（需校验归属）
-    public boolean removeTask(String videoId, String userId) {
-        VideoTaskInfo task = taskMap.get(videoId);
-        if (task != null && userId.equals(task.getUserId())) {
-            taskMap.remove(videoId);
-            return true;
-        }
-        return false;
-    }
-
-    // 获取单个任务（供内部使用）
-    public VideoTaskInfo getTask(String videoId) {
-        return taskMap.get(videoId);
-    }
-
-
-    // 移除已完成或失败的任务（出队，可选，但建议保留一段时间）
-    public void removeCompleted() {
-        taskMap.values().removeIf(task -> "completed".equals(task.getStatus()) || "failed".equals(task.getStatus()));
-    }
-
-    // 手动删除指定任务
-    public boolean removeTask(String videoId) {
-        return taskMap.remove(videoId) != null;
-    }
-}*/
