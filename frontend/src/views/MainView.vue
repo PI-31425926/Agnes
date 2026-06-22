@@ -28,6 +28,12 @@
           >🎬 视频</button>
           <button class="logout-btn" @click="logout">🚪 退出</button>
         </div>
+        <!-- 管理员入口按钮 -->
+        <button
+            v-if="userRole === 'ADMIN'"
+            class="admin-entry-btn"
+            @click="goAdmin"
+        >🛡️ 管理面板</button>
         <span class="status">● 在线</span>
       </header>
 
@@ -240,6 +246,14 @@ import { useRouter } from 'vue-router'
 import axios from 'axios'
 
 const router = useRouter()
+
+// 用户角色（从 localStorage 读取，登录时已存储）
+const userRole = ref(localStorage.getItem('role'))
+
+// 跳转到管理页面
+function goAdmin() {
+  router.push('/admin')
+}
 
 // ==================== 工具函数 ====================
 // 从 axios 响应中提取数据，兼容 { data: { ... } } 和 { ... } 两种格式
@@ -1482,5 +1496,21 @@ onUnmounted(() => {
   cursor: pointer;
   font-size: 0.9rem;
   padding: 0 2px;
+}
+.admin-entry-btn {
+  background: linear-gradient(135deg, #ff9900, #ff6600);
+  border: 1px solid rgba(255, 153, 0, 0.5);
+  color: #fff;
+  padding: 4px 14px;
+  border-radius: 20px;
+  font-size: 0.85rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.3s;
+  box-shadow: 0 0 12px rgba(255, 153, 0, 0.4);
+}
+.admin-entry-btn:hover {
+  box-shadow: 0 0 20px rgba(255, 153, 0, 0.8);
+  transform: scale(1.05);
 }
 </style>

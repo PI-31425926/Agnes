@@ -64,22 +64,28 @@
           <table class="data-table">
             <thead>
             <tr>
-              <th>ID</th>
-              <th>用户</th>
-              <th>操作类型</th>
-              <th>描述</th>
-              <th>状态</th>
               <th>时间</th>
+              <!--<th>ID</th>-->
+              <th>用户</th>
+              <!--<th>操作类型</th>-->
+              <th>描述</th>
+              <th>IP</th>              <!-- 新增 -->
+              <th>参数</th>            <!-- 新增 -->
+              <th>结果</th>            <!-- 新增 -->
+              <th>状态</th>
             </tr>
             </thead>
             <tbody>
             <tr v-for="log in logs" :key="log.id">
-              <td>{{ log.id }}</td>
-              <td>{{ log.username }}</td>
-              <td>{{ log.operationType }}</td>
-              <td class="desc-cell">{{ log.description }}</td>
-              <td><span :class="['status-badge', log.resultStatus]">{{ log.resultStatus }}</span></td>
+              <!--<td>{{ log.id }}</td>-->
               <td class="time-cell">{{ formatTime(log.createTime) }}</td>
+              <td>{{ log.username }}</td>
+              <!--<td>{{ log.operationType }}</td>-->
+              <td class="desc-cell">{{ log.description }}</td>
+              <td class="ip-cell" :title="log.ipAddress">{{ log.ipAddress || '-' }}</td>
+              <td class="params-cell" :title="log.params">{{ log.params || '-' }}</td>
+              <td class="result-cell" :title="log.resultDetail">{{ truncateText(log.resultDetail) }}</td>
+              <td><span :class="['status-badge', log.resultStatus]">{{ log.resultStatus }}</span></td>
             </tr>
             </tbody>
           </table>
@@ -157,6 +163,11 @@ function formatTime(timeStr) {
   if (!timeStr) return ''
   const date = new Date(timeStr)
   return date.toLocaleString('zh-CN')
+}
+
+function truncateText(text) {
+  if (!text) return '-'
+  return text.length > 50 ? text.substring(0, 50) + '...' : text
 }
 
 onMounted(() => {
@@ -350,5 +361,12 @@ onMounted(() => {
 @media (max-width: 480px) {
   .main-container { height: 100dvh; margin: 0; border-radius: 0; border-left: none; border-right: none; }
   .data-table th, .data-table td { padding: 8px 6px; font-size: 0.8rem; }
+}
+.ip-cell, .params-cell, .result-cell {
+  max-width: 120px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: default;
 }
 </style>
