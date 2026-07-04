@@ -6,9 +6,9 @@
 
 **后端**
 - Java 17 + Spring Boot 4.1
-- Spring Security + JWT 认证
+- Sa-Token 认证（替代 Spring Security + JWT）
 - MySQL 8（用户、会话、操作日志持久化）
-- Redis（会话历史、缓存）
+- Redis（会话历史、缓存、视频任务队列）
 - Apache Tika（文档解析）
 - Lombok
 
@@ -25,7 +25,9 @@
 | 文生图 | 文本描述生成图片，支持多种分辨率 |
 | 图生图 | 上传底图 + 描述，生成修改后的图片 |
 | 视频 | 异步任务队列、进度轮询、浏览器通知 |
-| 认证 | 手机号 + API Key 注册/登录，JWT Token 鉴权 |
+| 认证 | 手机号 + API Key 注册/登录，Sa-Token 鉴权 |
+| 游客 | 匿名对话，IP 限流 |
+| 管理 | 用户管理、操作日志 |
 
 ## 项目结构
 
@@ -34,14 +36,13 @@ Agnes/
 ├── backend/                 # Spring Boot 后端
 │   ├── src/main/java/com/bilibili/
 │   │   ├── BackendApplication.java
-│   │   ├── config/          # 安全、Redis、异步配置
-│   │   ├── controller/      # 5 个 REST 控制器
-│   │   ├── filter/          # JWT 过滤器
+│   │   ├── config/          # Sa-Token、Redis、异步配置
+│   │   ├── controller/      # 6 个 REST 控制器
 │   │   ├── common/context/  # 用户上下文 ThreadLocal
 │   │   ├── mapper/          # JPA Repository
 │   │   ├── pojo/            # Entity / DTO
 │   │   ├── service/         # 业务逻辑
-│   │   └── utils/           # AES、JWT、视频任务管理
+│   │   └── utils/           # AES、视频任务管理
 │   └── src/main/resources/
 │       ├── application.yml  # 主配置
 │       └── static/          # 前端构建产物
@@ -99,7 +100,7 @@ npm run build
 - **agnes.video-api-url / video-status-url** — 视频生成 API
 - **spring.datasource** — MySQL 连接
 - **spring.data.redis** — Redis 连接
-- **jwt.secret / aes.secret** — 密钥（生产环境务必替换）
+- **aes.secret** — AES 加密密钥（生产环境务必替换）
 
 ## API 接口
 
@@ -119,4 +120,4 @@ npm run build
 
 ## 安全说明
 
-本项目使用 AES 加密存储用户 API Key，JWT 进行认证。密钥配置在 `application.yml` 中，**生产环境请务必修改 `jwt.secret` 和 `aes.secret`**。
+本项目使用 AES-GCM 加密存储用户 API Key，Sa-Token 进行认证。密钥配置在 `application.yml` 中，**生产环境请务必修改 `aes.secret`**。
