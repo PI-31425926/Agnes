@@ -17,8 +17,7 @@ public class VideoTaskInfo {
     private String url;
     private String error;
     private long createdAt;       // 时间戳，可忽略
-    @JsonIgnore
-    private String userId;        // 新增：任务归属用户（手机号）
+    private String userId;        // 任务归属用户（手机号）
     @JsonIgnore
     private String apiKey;  // 已废弃：轮询时从数据库动态获取
 }
