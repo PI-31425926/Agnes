@@ -44,8 +44,8 @@ public class AgnesImageService {
 
     private final RestTemplate restTemplate;
 
-    public AgnesImageService() {
-        this.restTemplate = new RestTemplate();
+    public AgnesImageService(RestTemplate restTemplate) {
+        this.restTemplate = restTemplate;
     }
 
     public String generateImage(String prompt, String size) throws Exception {

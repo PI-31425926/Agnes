@@ -35,8 +35,8 @@ public class AgnesVideoService {
 
     private final RestTemplate restTemplate;
 
-    public AgnesVideoService() {
-        this.restTemplate = new RestTemplate();
+    public AgnesVideoService(RestTemplate restTemplate) {
+        this.restTemplate = restTemplate;
     }
 
     /**

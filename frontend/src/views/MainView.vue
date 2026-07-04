@@ -241,7 +241,7 @@
 
 <script setup>
 const currentTab = ref('chat')
-import { ref, nextTick, watch, computed, onUnmounted } from 'vue'
+import { ref, nextTick, watch, computed, onUnmounted, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import axios from 'axios'
 
@@ -306,8 +306,6 @@ async function sendChat() {
   const aiIndex = chatMessages.value.length - 1;
 
   try {
-    const token = localStorage.getItem('token');
-    console.log('[Stream] 发送请求，token存在:', !!token); // 调试日志
 
     const response = await fetch('/api/chat/stream', {
       method: 'POST',
@@ -318,12 +316,9 @@ async function sendChat() {
       body: JSON.stringify({ message: text })
     });
 
-    console.log('[Stream] 响应状态:', response.status); // 调试日志
-
     if (!response.ok) {
       // 非 200 响应，读取错误文本
       const errorText = await response.text();
-      console.error('[Stream] 错误响应体:', errorText);
       chatMessages.value[aiIndex].content = `请求失败 (${response.status}): ${errorText}`;
       return;
     }
@@ -347,7 +342,6 @@ async function sendChat() {
           if (data === '[DONE]') {
             // 流结束，强制输出缓冲区剩余文本
             flushTtsBuffer(true)
-            console.log('[Stream] 流结束');
             return;
           }
           chatMessages.value[aiIndex].content += data;
@@ -360,7 +354,6 @@ async function sendChat() {
       }
     }
   } catch (e) {
-    console.error('[Stream] 网络异常:', e);
     chatMessages.value[aiIndex].content = '请求失败：' + e.message;
   } finally {
     flushTtsBuffer(true)  // 确保缓冲区清空
@@ -542,9 +535,8 @@ watch(currentTab, async (tab) => {
   }
 })
 
-import { onMounted } from 'vue'
-
 onMounted(async () => {
+  // 加载对话历史
   try {
     const res = await axios.get('/api/chat/history')
     if (res.data && res.data.length > 0) {
@@ -559,8 +551,11 @@ onMounted(async () => {
       stopTts()
       speechSynthesis.cancel()
     }
-  } catch (e) {
-    console.error('加载历史失败', e)
+  } catch (e) {}
+
+  // 如果当前标签是图片相关，加载图片历史（处理刷新情况）
+  if (currentTab.value === 'text2img' || currentTab.value === 'img2img') {
+    loadImageHistory()
   }
 })
 
@@ -654,21 +649,12 @@ async function loadImageHistory() {
     if (res.data) {
       imageHistory.value = res.data
     }
-  } catch (e) {
-    console.error('加载图片历史失败', e)
-  }
+  } catch (e) {}
 }
 
 // 监听标签切换，当进入文生图或图生图标签时加载历史
 watch(currentTab, (newTab) => {
   if (newTab === 'text2img' || newTab === 'img2img') {
-    loadImageHistory()
-  }
-})
-
-// 首次加载时，如果当前标签是图片相关，也加载历史（处理刷新情况）
-onMounted(() => {
-  if (currentTab.value === 'text2img' || currentTab.value === 'img2img') {
     loadImageHistory()
   }
 })
@@ -737,9 +723,7 @@ async function fetchVideoTasks() {
       })
       videoTasks.value = tasks
     }
-  } catch (err) {
-    console.error('拉取任务列表失败', err)
-  }
+  } catch (err) {}
 }
 
 // 删除视频任务

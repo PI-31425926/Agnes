@@ -4,6 +4,7 @@ import com.bilibili.pojo.entity.User;
 import com.bilibili.service.AgnesService;
 import com.bilibili.service.UserService;
 import com.bilibili.utils.AesUtil;
+import com.bilibili.utils.IpUtils;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -17,7 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
-import java.util.Random;
+import java.util.concurrent.ThreadLocalRandom;
 
 @RestController
 @RequestMapping("/api/guest")
@@ -34,7 +35,7 @@ public class GuestController {
 
     @PostMapping("/chat")
     public ResponseEntity<?> chat(@RequestBody Map<String, String> body, HttpServletRequest request) {
-        String ip = getClientIp(request);
+        String ip = IpUtils.getClientIp(request);
         String limitKey = "guest:limit:" + ip;
         if (Boolean.TRUE.equals(redisTemplate.hasKey(limitKey))) {
             return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
@@ -46,7 +47,7 @@ public class GuestController {
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body("系统没有可用用户");
         }
         // 随机选择一个用户
-        User randomUser = users.get(new Random().nextInt(users.size()));
+        User randomUser = users.get(ThreadLocalRandom.current().nextInt(users.size()));
         String apiKey;
         try {
             apiKey = aesUtil.decrypt(randomUser.getApiKey());
@@ -69,19 +70,4 @@ public class GuestController {
         }
     }
 
-    // 获取客户端真实 IP（考虑代理）
-    private String getClientIp(HttpServletRequest request) {
-        String ip = request.getHeader("X-Forwarded-For");
-        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getHeader("X-Real-IP");
-        }
-        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getRemoteAddr();
-        }
-        // 多个 IP 时取第一个
-        if (ip != null && ip.contains(",")) {
-            ip = ip.split(",")[0].trim();
-        }
-        return ip;
-    }
 }

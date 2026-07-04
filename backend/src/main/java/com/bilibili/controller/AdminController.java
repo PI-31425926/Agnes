@@ -2,6 +2,7 @@ package com.bilibili.controller;
 
 import cn.dev33.satoken.annotation.SaCheckRole;
 import com.bilibili.mapper.OperationLogRepository;
+import com.bilibili.mapper.UserRepository;
 import com.bilibili.pojo.entity.OperationLog;
 import com.bilibili.pojo.entity.User;
 import com.bilibili.service.UserService;
@@ -25,6 +26,8 @@ public class AdminController {
     private UserService userService;
     @Autowired
     private OperationLogRepository logRepository;
+    @Autowired
+    private UserRepository userRepository;
 
     @GetMapping("/users")
     public List<Map<String, Object>> listUsers() {
@@ -39,8 +42,8 @@ public class AdminController {
 
     @DeleteMapping("/users/{id}")
     public ResponseEntity<?> deleteUser(@PathVariable Long id) {
-        User user = userService.findByPhone(null); // 简单判断存在
-        if (user == null) return ResponseEntity.notFound().build();
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("用户不存在"));
         userService.deleteById(id);
         return ResponseEntity.ok("删除成功");
     }

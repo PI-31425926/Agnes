@@ -13,7 +13,7 @@ public class AgnesVideoStatusResponse {
     private String status;
     private int progress;
     @JsonProperty("remixed_from_video_id")
-    private String url;           // 视频下载地址
+    private String downloadUrl;     // 视频下载地址（上游API字段名与实际含义不符）
     private String error;
     // 其它字段可忽略
 }

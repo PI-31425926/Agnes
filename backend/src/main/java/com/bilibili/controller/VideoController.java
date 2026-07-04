@@ -39,7 +39,7 @@ public class VideoController {
 
     // 创建视频任务
     @PostMapping("/generate")
-    public ResponseEntity<ApiResponse<VideoTaskResponse>> generateVideo(@RequestBody VideoGenerationRequest request) {
+    public ResponseEntity<ApiResponse<?>> generateVideo(@RequestBody VideoGenerationRequest request) {
         // 获取当前用户 API 密钥原文
         String userId = getCurrentUserId();
         String apiKey = getCurrentUserApiKeyPlain();
@@ -61,7 +61,6 @@ public class VideoController {
             taskInfo.setPrompt(request.getPrompt());
             taskInfo.setCreatedAt(System.currentTimeMillis());
             taskInfo.setUserId(userId);           // 设置归属
-            taskInfo.setApiKey(apiKey);  // 保存 API 密钥原文，供轮询使用
 
             // 加入队列
             taskManager.addTask(taskInfo);
@@ -99,7 +98,7 @@ public class VideoController {
 
     // 获取所有任务（前端展示用）
     @GetMapping("/tasks")
-    public ResponseEntity<ApiResponse<VideoTaskResponse>> getTasks() {
+    public ResponseEntity<ApiResponse<?>> getTasks() {
         String userId = getCurrentUserId();
         List<VideoTaskInfo> tasks = taskManager.getTasksByUser(userId);
         //List<VideoTaskInfo> tasks = taskManager.getAllTasks();
@@ -110,7 +109,7 @@ public class VideoController {
 
     // 删除任务（需校验归属）
     @DeleteMapping("/tasks/{videoId}")
-    public ResponseEntity<ApiResponse<VideoTaskResponse>> deleteTask(@PathVariable String videoId) {
+    public ResponseEntity<ApiResponse<?>> deleteTask(@PathVariable String videoId) {
         String userId = getCurrentUserId();
         boolean deleted = taskManager.removeTask(videoId, userId);
         if (deleted) {
@@ -131,7 +130,7 @@ public class VideoController {
      * @param <T> 泛型类型，根据调用方决定
      * @return 包装的错误响应
      */
-    private <T> ResponseEntity<ApiResponse<T>> handleAgnesError(HttpStatusCodeException e) {
+    private ResponseEntity<ApiResponse<?>> handleAgnesError(HttpStatusCodeException e) {
         String responseBody = e.getResponseBodyAsString();
         String message = "上游服务错误";
         try {

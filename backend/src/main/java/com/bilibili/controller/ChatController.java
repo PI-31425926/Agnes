@@ -60,6 +60,8 @@ public class ChatController {
         }
 
         SseEmitter emitter = new SseEmitter(300_000L);
+        emitter.onTimeout(() -> emitter.complete());
+        emitter.onError(e -> System.err.println("[SSE] 错误: " + e.getMessage()));
         agnesService.chatStreamReal(request.getMessage(), emitter, userId, apiKey);
         return emitter;
     }

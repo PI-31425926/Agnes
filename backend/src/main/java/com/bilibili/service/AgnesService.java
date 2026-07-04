@@ -9,7 +9,6 @@ import com.bilibili.pojo.dto.ChatMessage;
 import com.bilibili.pojo.dto.ChatResponse;
 import com.bilibili.pojo.entity.User;
 import com.bilibili.utils.AesUtil;
-import org.apache.tomcat.util.net.openssl.ciphers.Authentication;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -51,8 +50,8 @@ public class AgnesService {
 
     private final RestTemplate restTemplate;
 
-    public AgnesService() {
-        this.restTemplate = new RestTemplate();
+    public AgnesService(RestTemplate restTemplate) {
+        this.restTemplate = restTemplate;
     }
 
     @Autowired

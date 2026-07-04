@@ -7,6 +7,7 @@ import com.bilibili.pojo.entity.User;
 import com.bilibili.service.LogService;
 import com.bilibili.service.UserService;
 import com.bilibili.utils.AesUtil;
+import com.bilibili.utils.IpUtils;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -63,16 +64,17 @@ public class AuthController {
         StpUtil.login(phone);
 
         String token = StpUtil.getTokenValue();
-        // 记录登录日志，显式传入手机号和IP
-        String ip = getClientIp(request);
-        RequestContext.setCurrentUser(phone);  // 临时设置，方便日志记录
-        logService.logLogin("LOGIN", "用户登录", "SUCCESS", phone, ip);
+        String ip = IpUtils.getClientIp(request);
+        try {
+            RequestContext.setCurrentUser(phone);  // 临时设置，方便日志记录
+            logService.logLogin("LOGIN", "用户登录", "SUCCESS", phone, ip);
+        } finally {
+            RequestContext.clear();
+        }
         Map<String, Object> result = new HashMap<>();
         result.put("token", token);
         result.put("role", user.getRole());
         return ResponseEntity.ok(result);
-        /*RequestContext.clear();                 // 登录完成后清除
-        return ResponseEntity.ok(Map.of("token", token));*/
     }
 
     @PostMapping("/logout")
@@ -94,19 +96,4 @@ public class AuthController {
         return ResponseEntity.ok(map);
     }
 
-    // 获取客户端真实 IP（考虑代理）
-    private String getClientIp(HttpServletRequest request) {
-        String ip = request.getHeader("X-Forwarded-For");
-        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getHeader("X-Real-IP");
-        }
-        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getRemoteAddr();
-        }
-        // 多个 IP 时取第一个
-        if (ip != null && ip.contains(",")) {
-            ip = ip.split(",")[0].trim();
-        }
-        return ip;
-    }
 }
