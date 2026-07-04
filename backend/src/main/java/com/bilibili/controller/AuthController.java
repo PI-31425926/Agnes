@@ -53,9 +53,15 @@ public class AuthController {
             return ResponseEntity.status(401).body("手机号未注册");
         }
         try {
-            String decryptedApiKey = aesUtil.decrypt(user.getApiKey());
+            AesUtil.DecryptResult result = aesUtil.decrypt(user.getApiKey());
+            String decryptedApiKey = result.plaintext();
             if (!decryptedApiKey.equals(apiKey)) {
                 return ResponseEntity.status(401).body("API密钥错误");
+            }
+            // 旧 ECB 密文迁移到 GCM
+            if (result.legacy()) {
+                user.setApiKey(aesUtil.encrypt(apiKey));
+                userRepository.save(user);
             }
         } catch (Exception e) {
             return ResponseEntity.status(500).body("解密失败");

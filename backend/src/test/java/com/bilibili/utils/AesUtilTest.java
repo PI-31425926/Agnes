@@ -18,14 +18,13 @@ class AesUtilTest {
 
     @Test
     void encryptDecryptRoundTrip() throws Exception {
-        // 16-byte key for AES-128
         AesUtil util = createUtil("test-secret-key-1234");
 
         String original = "test-api-key-12345";
         String encrypted = util.encrypt(original);
         assertNotEquals(original, encrypted);
 
-        String decrypted = util.decrypt(encrypted);
+        String decrypted = util.decryptLegacy(encrypted);
         assertEquals(original, decrypted);
     }
 
@@ -37,8 +36,17 @@ class AesUtilTest {
         String enc1 = util.encrypt(original);
         String enc2 = util.encrypt(original);
 
-        // GCM with random IV produces different ciphertext each time
         assertNotEquals(enc1, enc2);
+    }
+
+    @Test
+    void decryptDetectsLegacyFormat() throws Exception {
+        AesUtil util = createUtil("test-secret-key-1234");
+
+        String encrypted = util.encrypt("test");
+        AesUtil.DecryptResult result = util.decrypt(encrypted);
+        assertFalse(result.legacy());
+        assertEquals("test", result.plaintext());
     }
 
     @Test
@@ -46,10 +54,8 @@ class AesUtilTest {
         AesUtil util = createUtil("test-secret-key-1234");
         String encrypted = util.encrypt("test");
 
-        AesUtil wrongUtil = createUtil("abcdefghijklmnopqrstuvwxyz"); // 26 bytes, invalid
-        // Use a different valid-length key instead
-        AesUtil wrongUtil2 = createUtil("abcdefghijklmnop"); // 16 bytes, different
-        assertThrows(Exception.class, () -> wrongUtil2.decrypt(encrypted));
+        AesUtil wrongUtil = createUtil("abcdefghijklmnop");
+        assertThrows(Exception.class, () -> wrongUtil.decrypt(encrypted));
     }
 
     @Test
@@ -57,7 +63,7 @@ class AesUtilTest {
         AesUtil util = createUtil("test-secret-key-1234");
 
         String encrypted = util.encrypt("");
-        String decrypted = util.decrypt(encrypted);
+        String decrypted = util.decryptLegacy(encrypted);
         assertEquals("", decrypted);
     }
 }

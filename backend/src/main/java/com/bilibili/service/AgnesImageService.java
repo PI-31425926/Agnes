@@ -176,7 +176,7 @@ public class AgnesImageService {
         User user = userRepository.findByPhone(phone)
                 .orElseThrow(() -> new RuntimeException("用户不存在"));
         try {
-            return aesUtil.decrypt(user.getApiKey());
+            return aesUtil.decryptLegacy(user.getApiKey());
         } catch (Exception e) {
             throw new RuntimeException("无法解密API密钥");
         }

@@ -50,7 +50,7 @@ public class GuestController {
         User randomUser = users.get(ThreadLocalRandom.current().nextInt(users.size()));
         String apiKey;
         try {
-            apiKey = aesUtil.decrypt(randomUser.getApiKey());
+            apiKey = aesUtil.decryptLegacy(randomUser.getApiKey());
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("API 密钥解密失败");
         }

@@ -54,7 +54,7 @@ public class ChatController {
                 .orElseThrow(() -> new RuntimeException("用户不存在"));
         String apiKey;
         try {
-            apiKey = aesUtil.decrypt(user.getApiKey());
+            apiKey = aesUtil.decryptLegacy(user.getApiKey());
         } catch (Exception e) {
             throw new RuntimeException("无法解密API密钥", e);
         }

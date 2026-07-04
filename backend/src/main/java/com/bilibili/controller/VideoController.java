@@ -90,7 +90,7 @@ public class VideoController {
                 .orElseThrow(() -> new RuntimeException("用户不存在"));
         // 4. 解密 API 密钥并返回
         try {
-            return aesUtil.decrypt(user.getApiKey());
+            return aesUtil.decryptLegacy(user.getApiKey());
         } catch (Exception e) {
             throw new RuntimeException("无法解密用户API密钥", e);
         }

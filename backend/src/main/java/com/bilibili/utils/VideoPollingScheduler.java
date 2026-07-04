@@ -51,6 +51,6 @@ public class VideoPollingScheduler {
     private String decryptApiKey(String phone) throws Exception {
         User user = userRepository.findByPhone(phone)
                 .orElseThrow(() -> new RuntimeException("用户不存在: " + phone));
-        return aesUtil.decrypt(user.getApiKey());
+        return aesUtil.decryptLegacy(user.getApiKey());
     }
 }
