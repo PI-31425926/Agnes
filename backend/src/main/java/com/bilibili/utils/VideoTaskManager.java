@@ -143,4 +143,13 @@ public class VideoTaskManager {
 
         return true;
     }
+
+    /**
+     * 强制清理任务（不校验归属，用于系统级清理旧任务）
+     */
+    public void forceRemoveTask(String videoId) {
+        String key = VIDEO_PREFIX + videoId;
+        redisTemplate.delete(key);
+        redisTemplate.opsForSet().remove(PENDING_SET_KEY, videoId);
+    }
 }

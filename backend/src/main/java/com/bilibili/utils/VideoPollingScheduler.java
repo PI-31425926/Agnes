@@ -34,6 +34,11 @@ public class VideoPollingScheduler {
         List<VideoTaskInfo> pendingTasks = taskManager.getPendingTasks();
         for (VideoTaskInfo task : pendingTasks) {
             try {
+                if (task.getUserId() == null || task.getUserId().isBlank()) {
+                    // 旧任务没有 userId，无法解密 apiKey，跳过并清理
+                    taskManager.forceRemoveTask(task.getVideoId());
+                    continue;
+                }
                 String apiKey = decryptApiKey(task.getUserId());
                 AgnesVideoStatusResponse statusResp = agnesVideoService.queryVideoStatusWithApiKey(
                         task.getVideoId(), apiKey);

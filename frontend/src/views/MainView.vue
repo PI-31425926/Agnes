@@ -306,7 +306,7 @@ async function sendChat() {
   const aiIndex = chatMessages.value.length - 1;
 
   try {
-
+    const token = localStorage.getItem('token');
     const response = await fetch('/api/chat/stream', {
       method: 'POST',
       headers: {
