@@ -12,8 +12,10 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Component
 @EnableScheduling
@@ -41,7 +43,10 @@ public class VideoPollingScheduler {
     @Scheduled(fixedDelay = 20000)
     public void pollVideoStatuses() {
         List<VideoTaskInfo> pendingTasks = taskManager.getPendingTasks();
+        Set<String> currentVideoIds = new HashSet<>();
+
         for (VideoTaskInfo task : pendingTasks) {
+            currentVideoIds.add(task.getVideoId());
             try {
                 if (task.getUserId() == null || task.getUserId().isBlank()) {
                     // 旧任务没有 userId，无法解密 apiKey，跳过并清理
@@ -75,6 +80,10 @@ public class VideoPollingScheduler {
                 System.err.println("轮询视频 " + task.getVideoId() + " 失败：" + e.getMessage());
             }
         }
+
+        // 清理已删除任务的残留状态
+        lastKnownStatus.keySet().removeIf(k -> !currentVideoIds.contains(k));
+        lastKnownProgress.keySet().removeIf(k -> !currentVideoIds.contains(k));
     }
 
     private String decryptApiKey(String phone) throws Exception {

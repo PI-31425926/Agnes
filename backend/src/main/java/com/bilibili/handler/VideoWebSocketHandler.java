@@ -16,6 +16,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
+import org.springframework.scheduling.annotation.Scheduled;
+
 @Component
 public class VideoWebSocketHandler extends TextWebSocketHandler {
 
@@ -24,6 +26,8 @@ public class VideoWebSocketHandler extends TextWebSocketHandler {
 
     // userId (phone) -> set of sessions
     private final Map<String, Set<WebSocketSession>> userSessions = new ConcurrentHashMap<>();
+    // userId -> session last access time (manual tracking, since WebSocketSession lacks getLastAccessTime)
+    private final Map<String, Long> sessionLastAccess = new ConcurrentHashMap<>();
 
     /**
      * 连接建立后：从 query param 取 token 验证，通过后加入 session map
@@ -38,16 +42,17 @@ public class VideoWebSocketHandler extends TextWebSocketHandler {
         }
 
         try {
-            // 简单验证：token 非空且长度合理即认为有效
-            // Sa-Token 的 token 本身就是 loginId 引用，直接用作 userId key
-            if (token.length() < 10) {
-                log.warn("WebSocket token too short, closing");
+            // 使用 Sa-Token 真实验证 token 有效性（不修改当前线程登录状态）
+            Object loginId = StpUtil.getLoginIdByToken(token);
+            if (loginId == null) {
+                log.warn("WebSocket token invalid, closing");
                 closeSession(session, new CloseStatus(401, "Unauthorized"));
                 return;
             }
-            String userId = token;
+            String userId = loginId.toString();
 
             userSessions.computeIfAbsent(userId, k -> ConcurrentHashMap.newKeySet()).add(session);
+            sessionLastAccess.put(userId, System.currentTimeMillis());
             log.info("WebSocket connected: userId={}, sessionId={}", userId, session.getId());
         } catch (Exception e) {
             log.warn("WebSocket token validation failed: {}", e.getMessage());
@@ -115,6 +120,7 @@ public class VideoWebSocketHandler extends TextWebSocketHandler {
                     session.sendMessage(message);
                 }
             }
+            sessionLastAccess.put(userId, System.currentTimeMillis());
         } catch (IOException e) {
             log.error("Failed to push WebSocket message to userId={}", userId, e);
         }
@@ -125,6 +131,31 @@ public class VideoWebSocketHandler extends TextWebSocketHandler {
      */
     public int getSessionCount() {
         return userSessions.values().stream().mapToInt(Set::size).sum();
+    }
+
+    /**
+     * 每 5 分钟清理一次：移除已关闭或 5 分钟未活动的 session
+     */
+    @Scheduled(fixedDelay = 300000)
+    public void cleanExpiredSessions() {
+        long threshold = System.currentTimeMillis() - 5 * 60 * 1000;
+        for (Map.Entry<String, Set<WebSocketSession>> entry : userSessions.entrySet()) {
+            String userId = entry.getKey();
+            Set<WebSocketSession> sessions = entry.getValue();
+            sessions.removeIf(session -> {
+                if (!session.isOpen()) {
+                    log.debug("Cleaning closed session: sessionId={}", session.getId());
+                    return true;
+                }
+                return false;
+            });
+            // 清理 5 分钟未活动的用户
+            Long lastAccess = sessionLastAccess.get(userId);
+            if (lastAccess != null && lastAccess < threshold && sessions.isEmpty()) {
+                userSessions.remove(userId);
+                sessionLastAccess.remove(userId);
+            }
+        }
     }
 
     private String extractToken(WebSocketSession session) {
