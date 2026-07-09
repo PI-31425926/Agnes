@@ -2,11 +2,16 @@ package com.bilibili.utils;
 
 import com.bilibili.pojo.dto.VideoTaskInfo;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.Cursor;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ScanOptions;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Component
 public class VideoTaskManager {
@@ -21,6 +26,24 @@ public class VideoTaskManager {
     private static final String USER_VIDEOS_SUFFIX = ":videos";
     private static final String PENDING_SET_KEY = "pending:videos";
 
+    // Lua script: atomically check quota (SCARD) only
+    // Returns count on success, -1 if quota exceeded
+    private static final String QUOTA_CHECK_LUA =
+            "local count = redis.call('SCARD', KEYS[1])\n" +
+            "if count >= tonumber(ARGV[1]) then return -1 end\n" +
+            "return count";
+
+    private final DefaultRedisScript<Long> quotaCheckScript;
+
+    @Autowired
+    private StringRedisTemplate stringRedisTemplate;
+
+    public VideoTaskManager() {
+        this.quotaCheckScript = new DefaultRedisScript<>();
+        this.quotaCheckScript.setScriptText(QUOTA_CHECK_LUA);
+        this.quotaCheckScript.setResultType(Long.class);
+    }
+
     /**
      * 添加新任务
      */
@@ -29,9 +52,13 @@ public class VideoTaskManager {
         String videoId = task.getVideoId();
         String userVideosKey = USER_VIDEOS_PREFIX + userId + USER_VIDEOS_SUFFIX;
 
-        // 检查用户已有视频数量
-        Long count = redisTemplate.opsForSet().size(userVideosKey);
-        if (count != null && count >= MAX_VIDEOS_PER_USER) {
+        // Atomic quota check via Lua script (SCARD only — SADD done separately via redisTemplate)
+        Long result = stringRedisTemplate.execute(
+                quotaCheckScript,
+                java.util.Collections.singletonList(userVideosKey),
+                String.valueOf(MAX_VIDEOS_PER_USER)
+        );
+        if (result == null || result == -1L) {
             throw new RuntimeException("每个用户最多同时拥有" + MAX_VIDEOS_PER_USER + "个视频任务，请等待已有任务完成或手动删除");
         }
 
@@ -39,9 +66,8 @@ public class VideoTaskManager {
         redisTemplate.opsForValue().set(VIDEO_PREFIX + videoId, task);
         redisTemplate.expire(VIDEO_PREFIX + videoId, Duration.ofMinutes(VIDEO_TTL_MINUTES));
 
-        // 关联到用户
+        // 关联到用户（JSON 序列化，与 Lua 的 string 路径隔离）
         redisTemplate.opsForSet().add(userVideosKey, videoId);
-        // 用户集合也设置 TTL，以便无任务时自动清理（不强制）
         redisTemplate.expire(userVideosKey, Duration.ofMinutes(VIDEO_TTL_MINUTES * 2));
 
         // 加入待处理集合
@@ -72,11 +98,18 @@ public class VideoTaskManager {
     }
 
     /**
-     * 获取所有未完成的任务（用于轮询）
+     * 获取所有未完成的任务（用于轮询）— 使用 SSCAN 分批迭代
      */
     public List<VideoTaskInfo> getPendingTasks() {
-        Set<Object> pendingIds = redisTemplate.opsForSet().members(PENDING_SET_KEY);
-        if (pendingIds == null || pendingIds.isEmpty()) {
+        Set<Object> pendingIds = new HashSet<>();
+        try (Cursor<Object> cursor = redisTemplate.opsForSet().scan(PENDING_SET_KEY,
+                ScanOptions.scanOptions().count(100L).build())) {
+            while (cursor.hasNext()) {
+                pendingIds.add(cursor.next());
+            }
+        }
+
+        if (pendingIds.isEmpty()) {
             return Collections.emptyList();
         }
 

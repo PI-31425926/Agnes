@@ -57,7 +57,7 @@ public class AgnesService {
     @Autowired
     private RedisTemplate<String, Object> redisTemplate;
 
-    private static final int MAX_HISTORY_MESSAGES = 10;   // 保留最近 10 轮（20条消息）
+    private static final int MAX_HISTORY_MESSAGES = 20;   // 保留最近 10 轮（20条消息）
     private static final long HISTORY_TTL_MINUTES = 30;   // 30 分钟无操作则清除记忆
 
     public String chat(String userMessage) {
@@ -141,8 +141,12 @@ public class AgnesService {
     }
 
     private void saveHistory(String key, List<ChatMessage> history) {
-        redisTemplate.delete(key);   // 先清空
+        if (history.isEmpty()) return;
+        // Append new messages
         redisTemplate.opsForList().rightPushAll(key, (Object[]) history.toArray(new Object[0]));
+        // Trim to sliding window (keep last MAX_HISTORY_MESSAGES)
+        redisTemplate.opsForList().trim(key, 0, MAX_HISTORY_MESSAGES - 1);
+        // Set TTL
         redisTemplate.expire(key, Duration.ofMinutes(HISTORY_TTL_MINUTES));
     }
 

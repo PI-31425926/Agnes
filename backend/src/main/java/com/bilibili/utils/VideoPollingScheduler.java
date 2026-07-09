@@ -44,7 +44,10 @@ public class VideoPollingScheduler {
                         task.getVideoId(), apiKey);
                 String status = statusResp.getStatus();
                 int progress = statusResp.getProgress();
+                // 优先使用 download_url，其次 url，最后 remixed_from_video_id
                 String url = statusResp.getDownloadUrl();
+                if (url == null || url.isBlank()) url = statusResp.getUrl();
+                if (url == null || url.isBlank()) url = statusResp.getRemixedFromVideoId();
                 String error = statusResp.getError();
                 taskManager.updateTask(task.getVideoId(), status, progress, url, error);
             } catch (Exception e) {

@@ -127,7 +127,7 @@ public class VideoController {
     /**
      * 统一处理 Agnes 返回的 HTTP 错误（如 503、429 等）
      * @param e 异常
-     * @param <T> 泛型类型，根据调用方决定
+     * @param <?> 泛型类型，根据调用方决定
      * @return 包装的错误响应
      */
     private ResponseEntity<ApiResponse<?>> handleAgnesError(HttpStatusCodeException e) {

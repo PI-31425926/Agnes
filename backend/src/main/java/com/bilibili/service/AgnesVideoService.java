@@ -67,6 +67,9 @@ public class AgnesVideoService {
                     videoApiUrl, entity, AgnesVideoCreateResponse.class);
 
             result = response.getBody();
+            if (result == null || result.getVideoId() == null) {
+                throw new RuntimeException("上游API返回空响应: " + (result != null ? result.toString() : "null"));
+            }
         } catch (Exception e) {
             status = "FAILED";
             errorMsg = e.getMessage();
