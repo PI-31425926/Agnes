@@ -3,6 +3,7 @@ package com.bilibili.controller;
 import cn.dev33.satoken.stp.StpUtil;
 import com.bilibili.common.context.RequestContext;
 import com.bilibili.mapper.UserRepository;
+import com.bilibili.pojo.dto.ApiResponse;
 import com.bilibili.pojo.dto.ChatMessage;
 import com.bilibili.pojo.dto.ChatRequest;
 import com.bilibili.pojo.dto.ChatResponse;
@@ -10,7 +11,6 @@ import com.bilibili.pojo.entity.User;
 import com.bilibili.service.AgnesService;
 import com.bilibili.utils.AesUtil;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -33,11 +33,11 @@ public class ChatController {
     }
 
     @PostMapping
-    public ChatResponse chat(@RequestBody ChatRequest request) {
+    public ApiResponse<ChatResponse> chat(@RequestBody ChatRequest request) {
         String reply = agnesService.chat(request.getMessage());
         ChatResponse response = new ChatResponse();
         response.setReply(reply);
-        return response;
+        return ApiResponse.success(response);
     }
 
     // 流式对话（传递用户信息）
@@ -67,10 +67,10 @@ public class ChatController {
     }
 
     @GetMapping("/history")
-    public ResponseEntity<List<ChatMessage>> getHistory() {
+    public ApiResponse<List<ChatMessage>> getHistory() {
         String userId = RequestContext.getCurrentUser();
         String historyKey = "chat:history:" + userId;
         List<ChatMessage> history = agnesService.getHistory(historyKey);
-        return ResponseEntity.ok(history);
+        return ApiResponse.success(history);
     }
 }

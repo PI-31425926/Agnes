@@ -59,7 +59,7 @@
 
 <script setup>
 import { ref, nextTick, onMounted, onUnmounted } from 'vue'
-import axios from 'axios'
+import request from '@/api/request'
 
 const chatMessages = ref([])
 const chatInput = ref('')
@@ -91,10 +91,10 @@ async function sendChat() {
 
   sending.value = true
   try {
-    const res = await axios.post('/api/guest/chat', { message: text })
+    const res = await request.post('/guest/chat', { message: text })
     // 游客接口返回格式：{ reply: "xxx" }
-    if (res.data && res.data.reply) {
-      chatMessages.value[aiIndex].content = res.data.reply
+    if (res && res.reply) {
+      chatMessages.value[aiIndex].content = res.reply
     } else {
       chatMessages.value[aiIndex].content = '无回复'
     }

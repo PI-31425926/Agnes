@@ -67,7 +67,7 @@
 <script setup>
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import axios from 'axios'
+import request from '@/api/request'
 
 const router = useRouter()
 const isLogin = ref(true)
@@ -97,12 +97,11 @@ async function submit() {
   }
 
   loading.value = true
-  const url = isLogin.value ? '/api/auth/login' : '/api/auth/register'
   try {
-    const res = await axios.post(url, { phone: phone.value, apiKey: apiKey.value })
+    const res = await request.post(isLogin.value ? '/auth/login' : '/auth/register', { phone: phone.value, apiKey: apiKey.value })
     if (isLogin.value) {
-      localStorage.setItem('token', res.data.token)
-      localStorage.setItem('role', res.data.role)
+      localStorage.setItem('token', res.token)
+      localStorage.setItem('role', res.role)
       router.push('/')
     } else {
       alert('注册成功，请登录')
@@ -111,7 +110,7 @@ async function submit() {
       apiKey.value = ''
     }
   } catch (err) {
-    errorMsg.value = err.response?.data?.message || err.response?.data || '请求失败'
+    errorMsg.value = err.message || '请求失败'
   } finally {
     loading.value = false
   }

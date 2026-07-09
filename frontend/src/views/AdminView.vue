@@ -102,7 +102,7 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import axios from 'axios'
+import request from '@/api/request'
 
 const adminTab = ref('users')
 
@@ -116,8 +116,8 @@ async function loadUsers() {
   usersLoading.value = true
   usersError.value = ''
   try {
-    const res = await axios.get('/api/admin/users')
-    users.value = res.data
+    const res = await request.get('/admin/users')
+    users.value = res
   } catch (e) {
     usersError.value = '加载用户失败：' + (e.response?.data?.message || e.message)
   } finally {
@@ -129,7 +129,7 @@ async function deleteUser(userId) {
   if (!confirm('确定要删除该用户吗？')) return
   deleting.value = userId
   try {
-    await axios.delete(`/api/admin/users/${userId}`)
+    await request.delete(`/admin/users/${userId}`)
     users.value = users.value.filter(u => u.id !== userId)
   } catch (e) {
     alert('删除失败：' + (e.response?.data?.message || e.message))
@@ -150,8 +150,8 @@ async function loadLogs(page = 0) {
   logsError.value = ''
   logPage.value = page
   try {
-    const res = await axios.get('/api/admin/logs', { params: { page, size: logSize } })
-    logs.value = res.data
+    const res = await request.get('/admin/logs', { params: { page, size: logSize } })
+    logs.value = res
   } catch (e) {
     logsError.value = '加载日志失败：' + (e.response?.data?.message || e.message)
   } finally {

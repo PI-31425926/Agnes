@@ -243,7 +243,7 @@
 const currentTab = ref('chat')
 import { ref, nextTick, watch, computed, onUnmounted, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import axios from 'axios'
+import request from '@/api/request'
 
 const router = useRouter()
 
@@ -256,16 +256,6 @@ function goAdmin() {
 }
 
 // ==================== 工具函数 ====================
-// 从 axios 响应中提取数据，兼容 { data: { ... } } 和 { ... } 两种格式
-function unwrapResponse(response) {
-  const body = response.data
-  // 如果返回体里有 data 字段，且 data 是对象，则展开，否则直接返回 body
-  if (body && typeof body.data === 'object' && body.data !== null) {
-    return body.data
-  }
-  return body
-}
-
 // 提取错误信息
 function getErrorMessage(error, defaultMsg = '请求失败') {
   if (error.response && error.response.data) {
@@ -459,7 +449,7 @@ async function handleFileUpload(e) {
 
   isUploading.value = true
   try {
-    const res = await axios.post('/api/chat/upload', formData, {
+    const res = await request.post('/chat/upload', formData, {
       headers: { 'Content-Type': 'multipart/form-data' }
     })
     if (res.status === 200) {
@@ -480,7 +470,7 @@ async function handleFileUpload(e) {
 // 清除上传文件
 async function clearUploadedFile() {
   try {
-    await axios.delete('/api/chat/upload')
+    await request.delete('/chat/upload')
   } catch (e) {}
   hasUploadedFile.value = false
   uploadedFileName.value = ''
@@ -512,9 +502,8 @@ function toggleSpeak(idx, text) {
   chatMessages.value.push({ role: 'user', content: text })
   chatInput.value = ''
   try {
-    const res = await axios.post('/api/chat', { message: text })
-    const data = unwrapResponse(res)   // 尝试解包
-    const reply = data?.reply || data?.content || '无回复'
+    const res = await request.post('/chat', { message: text })
+    const reply = res?.reply || res?.content || '无回复'
     chatMessages.value.push({ role: 'assistant', content: reply })
   } catch (e) {
     const msg = getErrorMessage(e, '请求失败')
@@ -538,7 +527,7 @@ watch(currentTab, async (tab) => {
 onMounted(async () => {
   // 加载对话历史
   try {
-    const res = await axios.get('/api/chat/history')
+    const res = await request.get('/chat/history')
     if (res.data && res.data.length > 0) {
       res.data.forEach(msg => {
         chatMessages.value.push({
@@ -571,13 +560,12 @@ async function generateText2img() {
   text2imgGenerating.value = true
   text2imgResult.value = null
   try {
-    const res = await axios.post('/api/image', {
+    const res = await request.post('/image', {
       prompt,
       size: text2imgSize.value
     })
-    const data = unwrapResponse(res)
-    if (data && data.url) {
-      text2imgResult.value = data.url
+    if (res && res.url) {
+      text2imgResult.value = res.url
     } else {
       alert('生成失败：返回数据异常')
     }
@@ -621,14 +609,13 @@ async function generateImg2img() {
   img2imgGenerating.value = true
   img2imgResult.value = null
   try {
-    const res = await axios.post('/api/image/to-image', {
+    const res = await request.post('/image/to-image', {
       prompt,
       size: img2imgSize.value,
       imageBase64: uploadedImageBase64.value
     })
-    const data = unwrapResponse(res)
-    if (data && data.url) {
-      img2imgResult.value = data.url
+    if (res && res.url) {
+      img2imgResult.value = res.url
     } else {
       alert('图生图失败：返回数据异常')
     }
@@ -645,7 +632,7 @@ const imageHistory = ref([])
 // 加载图片历史
 async function loadImageHistory() {
   try {
-    const res = await axios.get('/api/image/history')
+    const res = await request.get('/image/history')
     if (res.data) {
       imageHistory.value = res.data
     }
@@ -692,15 +679,14 @@ async function submitVideoTask() {
   const prompt = videoPrompt.value.trim()
   if (!prompt) return
   try {
-    const res = await axios.post('/api/video/generate', {
+    const res = await request.post('/video/generate', {
       prompt,
       width: videoWidth.value,
       height: videoHeight.value,
       numFrames: videoNumFrames.value,
       frameRate: videoFrameRate.value
     })
-    const data = unwrapResponse(res)
-    if (data && data.taskId) {
+    if (res && res.taskId) {
       fetchVideoTasks()     // 刷新队列
       videoPrompt.value = ''
     } else {
@@ -714,9 +700,8 @@ async function submitVideoTask() {
 // 拉取任务列表（降级轮询用）
 async function fetchVideoTasks() {
   try {
-    const res = await axios.get('/api/video/tasks')
-    const data = unwrapResponse(res)
-    const tasks = Array.isArray(data) ? data : (data?.tasks || data?.data || [])
+    const res = await request.get('/video/tasks')
+    const tasks = Array.isArray(res) ? res : (res || [])
     if (tasks.length > 0 || videoTasks.value.length > 0) {
       tasks.forEach(task => {
         if (task.status === 'completed' && !previousCompleted.value.has(task.videoId)) {
@@ -827,7 +812,7 @@ function closeVideoWebSocket() {
 // 删除视频任务
 async function deleteVideoTask(videoId) {
   try {
-    await axios.delete(`/api/video/tasks/${videoId}`)
+    await request.delete(`/video/tasks/${videoId}`)
     fetchVideoTasks()
   } catch (e) {
     alert('删除失败：' + getErrorMessage(e))
