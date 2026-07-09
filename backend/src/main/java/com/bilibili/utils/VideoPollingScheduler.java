@@ -1,5 +1,6 @@
 package com.bilibili.utils;
 
+import com.bilibili.handler.VideoWebSocketHandler;
 import com.bilibili.mapper.UserRepository;
 import com.bilibili.pojo.dto.AgnesVideoStatusResponse;
 import com.bilibili.pojo.dto.VideoTaskInfo;
@@ -12,6 +13,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.Map;
 
 @Component
 @EnableScheduling
@@ -28,6 +30,13 @@ public class VideoPollingScheduler {
 
     @Autowired
     private AesUtil aesUtil;
+
+    @Autowired
+    private VideoWebSocketHandler webSocketHandler;
+
+    // 记录上次轮询时的状态，用于检测变化
+    private final Map<String, String> lastKnownStatus = new java.util.concurrent.ConcurrentHashMap<>();
+    private final Map<String, Integer> lastKnownProgress = new java.util.concurrent.ConcurrentHashMap<>();
 
     @Scheduled(fixedDelay = 20000)
     public void pollVideoStatuses() {
@@ -50,6 +59,18 @@ public class VideoPollingScheduler {
                 if (url == null || url.isBlank()) url = statusResp.getRemixedFromVideoId();
                 String error = statusResp.getError();
                 taskManager.updateTask(task.getVideoId(), status, progress, url, error);
+
+                // 检测状态变化并推送
+                String prevStatus = lastKnownStatus.put(task.getVideoId(), status);
+                Integer prevProgress = lastKnownProgress.put(task.getVideoId(), progress);
+
+                if (prevStatus == null || !prevStatus.equals(status)) {
+                    String eventType = "completed".equals(status) ? "video_completed" : "video_status";
+                    VideoTaskInfo updatedTask = taskManager.getTaskById(task.getVideoId());
+                    if (updatedTask != null) {
+                        webSocketHandler.pushToUser(task.getUserId(), updatedTask, eventType);
+                    }
+                }
             } catch (Exception e) {
                 System.err.println("轮询视频 " + task.getVideoId() + " 失败：" + e.getMessage());
             }

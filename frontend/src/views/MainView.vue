@@ -659,7 +659,7 @@ watch(currentTab, (newTab) => {
   }
 })
 
-// ==================== 视频生成（队列模式） ====================
+// ==================== 视频生成（WebSocket 推送 + 降级轮询） ====================
 const videoPrompt = ref('')
 const videoWidth = ref(1152)
 const videoHeight = ref(768)
@@ -668,6 +668,12 @@ const videoFrameRate = ref(24)
 
 const videoTasks = ref([])
 const previousCompleted = ref(new Set())
+
+let wsConnected = false
+let wsSession = null
+let wsRetryCount = 0
+const WS_MAX_RETRIES = 5
+const WS_RECONNECT_DELAY = 3000
 let taskListTimer = null
 
 const statusMap = {
@@ -705,12 +711,11 @@ async function submitVideoTask() {
   }
 }
 
-// 拉取任务列表
+// 拉取任务列表（降级轮询用）
 async function fetchVideoTasks() {
   try {
     const res = await axios.get('/api/video/tasks')
     const data = unwrapResponse(res)
-    // 任务列表可能直接是数组，也可能是 { tasks: [...] }
     const tasks = Array.isArray(data) ? data : (data?.tasks || data?.data || [])
     if (tasks.length > 0 || videoTasks.value.length > 0) {
       tasks.forEach(task => {
@@ -724,6 +729,99 @@ async function fetchVideoTasks() {
       videoTasks.value = tasks
     }
   } catch (err) {}
+}
+
+// 通过 WebSocket 更新单个任务
+function updateTaskFromWS(task) {
+  const idx = videoTasks.value.findIndex(t => t.videoId === task.videoId)
+  if (idx >= 0) {
+    videoTasks.value[idx] = { ...videoTasks.value[idx], ...task }
+  } else {
+    videoTasks.value.push(task)
+  }
+  // 标记已完成的任务
+  if (task.status === 'completed') {
+    previousCompleted.value.add(task.videoId)
+  }
+}
+
+// 连接 WebSocket
+function connectVideoWebSocket() {
+  if (wsConnected && wsSession) return
+
+  const token = localStorage.getItem('token')
+  if (!token) return
+
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
+  const wsUrl = `${proto}//${location.host}/api/ws/video?token=${token}`
+
+  try {
+    wsSession = new WebSocket(wsUrl)
+  } catch (e) {
+    console.error('WebSocket 创建失败:', e)
+    startFallbackPolling()
+    return
+  }
+
+  wsSession.onopen = () => {
+    console.log('WebSocket 已连接')
+    wsConnected = true
+    wsRetryCount = 0
+    stopFallbackPolling()
+  }
+
+  wsSession.onmessage = (event) => {
+    try {
+      const msg = JSON.parse(event.data)
+      if (msg.type === 'video_status' || msg.type === 'video_completed') {
+        updateTaskFromWS(msg.data)
+      }
+    } catch (e) {
+      console.error('WebSocket 消息解析失败:', e)
+    }
+  }
+
+  wsSession.onclose = () => {
+    console.log('WebSocket 断开')
+    wsConnected = false
+    wsSession = null
+    // 重试或降级
+    if (wsRetryCount < WS_MAX_RETRIES) {
+      wsRetryCount++
+      setTimeout(connectVideoWebSocket, WS_RECONNECT_DELAY)
+    } else {
+      console.log('WebSocket 重连失败，启用降级轮询')
+      startFallbackPolling()
+    }
+  }
+
+  wsSession.onerror = (err) => {
+    console.error('WebSocket 错误:', err)
+    wsSession.close()
+  }
+}
+
+// 降级轮询
+function startFallbackPolling() {
+  if (taskListTimer) return
+  taskListTimer = setInterval(fetchVideoTasks, 30000)
+}
+
+function stopFallbackPolling() {
+  if (taskListTimer) {
+    clearInterval(taskListTimer)
+    taskListTimer = null
+  }
+}
+
+// 关闭 WebSocket
+function closeVideoWebSocket() {
+  if (wsSession) {
+    wsSession.close()
+    wsSession = null
+  }
+  wsConnected = false
+  stopFallbackPolling()
 }
 
 // 删除视频任务
@@ -743,12 +841,9 @@ watch(currentTab, (newTab) => {
       Notification.requestPermission()
     }
     fetchVideoTasks()
-    taskListTimer = setInterval(fetchVideoTasks, 20000)
+    connectVideoWebSocket()
   } else {
-    if (taskListTimer) {
-      clearInterval(taskListTimer)
-      taskListTimer = null
-    }
+    closeVideoWebSocket()
   }
 })
 
@@ -759,7 +854,7 @@ function logout() {
 }
 
 onUnmounted(() => {
-  if (taskListTimer) clearInterval(taskListTimer)
+  closeVideoWebSocket()
 })
 </script>
 

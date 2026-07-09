@@ -133,6 +133,13 @@ public class VideoTaskManager {
     }
 
     /**
+     * 根据 videoId 获取任务
+     */
+    public VideoTaskInfo getTaskById(String videoId) {
+        return (VideoTaskInfo) redisTemplate.opsForValue().get(VIDEO_PREFIX + videoId);
+    }
+
+    /**
      * 获取指定用户的所有任务（含已完成和失败）
      */
     public List<VideoTaskInfo> getTasksByUser(String userId) {
