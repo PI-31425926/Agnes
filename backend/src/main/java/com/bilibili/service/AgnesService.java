@@ -104,13 +104,10 @@ public class AgnesService {
 
             // 6. 更新历史（仅在调用成功后记录）
             if ("SUCCESS".equals(status)) {
-                history.add(new ChatMessage("user", userMessage));
-                history.add(new ChatMessage("assistant", result));
-                // 修剪历史长度
-                if (history.size() > MAX_HISTORY_MESSAGES) {
-                    history = history.subList(history.size() - MAX_HISTORY_MESSAGES, history.size());
-                }
-                saveHistory(historyKey, history);
+                ChatMessage userMsg = new ChatMessage("user", userMessage);
+                ChatMessage assistantMsg = new ChatMessage("assistant", result);
+                System.out.println("[History] Before save: userMsg=" + userMsg + ", assistantMsg=" + assistantMsg);
+                saveHistory(historyKey, userMsg, assistantMsg);
             }
 
         } catch (Exception e) {
@@ -135,19 +132,25 @@ public class AgnesService {
     public List<ChatMessage> getHistory(String key) {
         List<Object> raw = redisTemplate.opsForList().range(key, 0, -1);
         if (raw == null) return new ArrayList<>();
+        System.out.println("[History] Loaded " + raw.size() + " messages from " + key);
         return raw.stream()
-                .map(obj -> (ChatMessage) obj)
+                .map(obj -> {
+                    System.out.println("[History] Deserialized: " + obj.getClass().getName() + " -> " + obj);
+                    return (ChatMessage) obj;
+                })
                 .collect(Collectors.toList());
     }
 
-    private void saveHistory(String key, List<ChatMessage> history) {
-        if (history.isEmpty()) return;
-        // Append new messages
-        redisTemplate.opsForList().rightPushAll(key, (Object[]) history.toArray(new Object[0]));
-        // Trim to sliding window (keep last MAX_HISTORY_MESSAGES)
-        redisTemplate.opsForList().trim(key, 0, MAX_HISTORY_MESSAGES - 1);
+    private void saveHistory(String key, ChatMessage... messages) {
+        if (messages.length == 0) return;
+        System.out.println("[History] Saving to " + key + ": " + messages.length + " messages");
+        // 只追加本轮新消息（真正的滑动窗口语义）
+        redisTemplate.opsForList().rightPushAll(key, (Object[]) messages);
+        // 保留最右边 MAX_HISTORY_MESSAGES 条（最新的）
+        redisTemplate.opsForList().trim(key, -MAX_HISTORY_MESSAGES, -1);
         // Set TTL
         redisTemplate.expire(key, Duration.ofMinutes(HISTORY_TTL_MINUTES));
+        System.out.println("[History] Saved successfully, key=" + key);
     }
 
 
@@ -192,7 +195,7 @@ public class AgnesService {
                 for (ChatMessage msg : history) {
                     messages.add(new AgnesChatRequest.Message(msg.getRole(), msg.getContent()));
                 }
-                messages.add(new AgnesChatRequest.Message("user", userMessage2)); // 使用拼接后的消息
+                messages.add(new AgnesChatRequest.Message("user", userMessage2 != null ? userMessage2 : userMessage));
 
                 // 2. 构建请求头（使用传入的 apiKey）
                 HttpHeaders headers = new HttpHeaders();
@@ -244,18 +247,19 @@ public class AgnesService {
                         });
 
                 fullReply = fullReplyBuilder.toString();
+                System.out.println("[Stream] fullReply length=" + fullReply.length() + ", isEmpty=" + fullReply.isEmpty());
 
                 // 4. 更新历史（记录拼接后的用户消息，以保持上下文一致性）
                 if (fullReply == null || fullReply.isEmpty()) {
                     fullReply = "No response";
                     status = "FAILED";
                 } else {
-                    history.add(new ChatMessage("user", userMessage2));
-                    history.add(new ChatMessage("assistant", fullReply));
-                    if (history.size() > MAX_HISTORY_MESSAGES) {
-                        history = history.subList(history.size() - MAX_HISTORY_MESSAGES, history.size());
-                    }
-                    saveHistory(historyKey, history);
+                    // 使用拼接后的消息（含文件内容），若无文件则用原始消息
+                    String displayUserMessage = userMessage2 != null ? userMessage2 : userMessage;
+                    ChatMessage userMsg = new ChatMessage("user", displayUserMessage);
+                    ChatMessage assistantMsg = new ChatMessage("assistant", fullReply);
+                    System.out.println("[History] Before save: userMsg=" + userMsg + ", assistantMsg=" + assistantMsg);
+                    saveHistory(historyKey, userMsg, assistantMsg);
                 }
 
                 // 5. 对话成功后清除暂存文件（无论成功失败可选，推荐成功时清除）

@@ -284,7 +284,8 @@ let ttsFlushTimer = null       // 定时刷新定时器
 
 async function sendChat() {
   const text = chatInput.value.trim();
-  if (!text) return;
+  // 有上传文件时允许空消息，后端会用默认问题
+  if (!text && !hasUploadedFile.value) return;
 
   // 停止任何正在进行的语音朗读
   stopTts()
@@ -452,12 +453,8 @@ async function handleFileUpload(e) {
     const res = await request.post('/chat/upload', formData, {
       headers: { 'Content-Type': 'multipart/form-data' }
     })
-    if (res.status === 200) {
-      hasUploadedFile.value = true
-      uploadedFileName.value = file.name
-    } else {
-      alert('上传失败')
-    }
+    hasUploadedFile.value = true
+    uploadedFileName.value = file.name
   } catch (e) {
     alert('文件上传失败：' + (e.response?.data || e.message))
   } finally {
@@ -528,8 +525,9 @@ onMounted(async () => {
   // 加载对话历史
   try {
     const res = await request.get('/chat/history')
-    if (res.data && res.data.length > 0) {
-      res.data.forEach(msg => {
+    console.log('[History] Chat history response:', res)
+    if (res && res.length > 0) {
+      res.forEach(msg => {
         chatMessages.value.push({
           role: msg.role,
           content: msg.content
@@ -633,8 +631,8 @@ const imageHistory = ref([])
 async function loadImageHistory() {
   try {
     const res = await request.get('/image/history')
-    if (res.data) {
-      imageHistory.value = res.data
+    if (res) {
+      imageHistory.value = res
     }
   } catch (e) {}
 }

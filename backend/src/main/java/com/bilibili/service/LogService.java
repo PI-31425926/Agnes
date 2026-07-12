@@ -16,11 +16,26 @@ public class LogService {
     private OperationLogRepository logRepository;
 
     /**
+     * 截断过长的字符串，防止 MySQL TEXT 字段溢出（UTF-8 下 TEXT 最大 65535 字节）
+     */
+    private String truncate(String str, int maxBytes) {
+        if (str == null) return null;
+        byte[] bytes = str.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        if (bytes.length <= maxBytes) return str;
+        // 截断到 maxBytes，避免截断多字节字符中间
+        int cut = Math.min(maxBytes, bytes.length);
+        while (cut > 0 && (bytes[cut] & 0xC0) == 0x80) {
+            cut--;  // 回退到多字节字符边界
+        }
+        return new String(bytes, 0, cut) + "...";
+    }
+
+    /**
      * 异步记录操作日志，避免阻塞主流程
      */
     @Async("taskExecutor")
     public void log(String operationType, String description, String params, String resultStatus, String resultDetail) {
-        String username = getCurrentUsername(); // 自动从 RequestContext 获取
+        String username = getCurrentUsername();
         System.out.println(username);
         OperationLog log = new OperationLog();
         log.setUsername(username);
@@ -28,12 +43,11 @@ public class LogService {
         log.setDescription(description);
         log.setParams(params);
         log.setResultStatus(resultStatus);
-        log.setResultDetail(resultDetail);
+        log.setResultDetail(truncate(resultDetail, 65000));
         log.setCreateTime(LocalDateTime.now());
         logRepository.save(log);
     }
 
-    // 新增：显式传入 username 的重载
     @Async
     public void log(String operationType, String description, String params,
                     String resultStatus, String resultDetail, String username) {
@@ -43,14 +57,11 @@ public class LogService {
         log.setDescription(description);
         log.setParams(params);
         log.setResultStatus(resultStatus);
-        log.setResultDetail(resultDetail);
+        log.setResultDetail(truncate(resultDetail, 65000));
         log.setCreateTime(LocalDateTime.now());
         logRepository.save(log);
     }
 
-    /**
-     * 记录操作日志（带 IP）
-     */
     @Async
     public void logWithIp(String operationType, String description, String params,
                           String resultStatus, String resultDetail, String ipAddress) {
@@ -60,13 +71,12 @@ public class LogService {
         log.setDescription(description);
         log.setParams(params);
         log.setResultStatus(resultStatus);
-        log.setResultDetail(resultDetail);
+        log.setResultDetail(truncate(resultDetail, 65000));
         log.setCreateTime(LocalDateTime.now());
         log.setIpAddress(ipAddress);
         logRepository.save(log);
     }
 
-    // 新方法：允许显式指定用户名和IP（登录专用）
     @Async
     public void logLogin(String operationType, String description, String resultStatus,
                          String username, String ipAddress) {
@@ -76,7 +86,7 @@ public class LogService {
     private void saveLog(String operationType, String description, String params,
                          String resultStatus, String resultDetail, String username, String ipAddress) {
         if (username == null) {
-            username = getCurrentUsername();   // 从登录上下文获取
+            username = getCurrentUsername();
         }
         OperationLog log = new OperationLog();
         log.setUsername(username);
@@ -84,16 +94,13 @@ public class LogService {
         log.setDescription(description);
         log.setParams(params);
         log.setResultStatus(resultStatus);
-        log.setResultDetail(resultDetail);
+        log.setResultDetail(truncate(resultDetail, 65000));
         log.setCreateTime(LocalDateTime.now());
         log.setIpAddress(ipAddress);
         logRepository.save(log);
     }
 
-
-
     private String getCurrentUsername() {
-        // 优先从 ThreadLocal 获取
         String user = RequestContext.getCurrentUser();
         if (user != null) return user;
         return "anonymous";
