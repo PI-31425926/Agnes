@@ -9,6 +9,7 @@ import java.util.List;
 public class AgnesChatRequest {
     private String model;
     private List<Message> messages;
+    private String conversationId;
 
     @Data
     @AllArgsConstructor

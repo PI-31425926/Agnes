@@ -43,6 +43,7 @@ public class ChatController {
     // 流式对话（传递用户信息）
     @PostMapping("/stream")
     public SseEmitter chatStream(@RequestBody ChatRequest request) {
+        System.out.println("[ChatController] Received: message='" + request.getMessage() + "', conversationId='" + request.getConversationId() + "'");
         // Sa-Token 校验登录
         StpUtil.checkLogin();  // 未登录会自动抛出 NotLoginException
 
@@ -59,18 +60,19 @@ public class ChatController {
             throw new RuntimeException("无法解密API密钥", e);
         }
 
+        String conversationId = request.getConversationId();
+        System.out.println("[Chat] conversationId=" + conversationId);
         SseEmitter emitter = new SseEmitter(300_000L);
         emitter.onTimeout(() -> emitter.complete());
         emitter.onError(e -> System.err.println("[SSE] 错误: " + e.getMessage()));
-        agnesService.chatStreamReal(request.getMessage(), emitter, userId, apiKey);
+        agnesService.chatStreamReal(request.getMessage(), emitter, userId, apiKey, conversationId);
         return emitter;
     }
 
     @GetMapping("/history")
-    public ApiResponse<List<ChatMessage>> getHistory() {
+    public ApiResponse<List<ChatMessage>> getHistory(@RequestParam(required = false) String conversationId) {
         String userId = RequestContext.getCurrentUser();
-        String historyKey = "chat:history:" + userId;
-        List<ChatMessage> history = agnesService.getHistory(historyKey);
+        List<ChatMessage> history = agnesService.getHistoryByConversation(userId, conversationId);
         return ApiResponse.success(history);
     }
 }

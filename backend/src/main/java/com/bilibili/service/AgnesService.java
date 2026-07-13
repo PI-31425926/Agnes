@@ -60,7 +60,15 @@ public class AgnesService {
     private static final int MAX_HISTORY_MESSAGES = 20;   // 保留最近 10 轮（20条消息）
     private static final long HISTORY_TTL_MINUTES = 30;   // 30 分钟无操作则清除记忆
 
+    // 用于自动更新对话标题
+    private volatile String activeConversationTitle = "";
+    private volatile String activeConversationId = "";
+
     public String chat(String userMessage) {
+        return chatWithConversation(userMessage, null);
+    }
+
+    public String chatWithConversation(String userMessage, String conversationId) {
         String result = null;
         String status = "SUCCESS";
 
@@ -69,7 +77,7 @@ public class AgnesService {
             String userId = getCurrentUserId();
 
             // 2. 从 Redis 获取历史消息
-            String historyKey = "chat:history:" + userId;
+            String historyKey = buildHistoryKey(userId, conversationId);
             List<ChatMessage> history = getHistory(historyKey);
 
             // 3. 构建完整的消息列表（历史 + 当前用户消息）
@@ -106,7 +114,6 @@ public class AgnesService {
             if ("SUCCESS".equals(status)) {
                 ChatMessage userMsg = new ChatMessage("user", userMessage);
                 ChatMessage assistantMsg = new ChatMessage("assistant", result);
-                System.out.println("[History] Before save: userMsg=" + userMsg + ", assistantMsg=" + assistantMsg);
                 saveHistory(historyKey, userMsg, assistantMsg);
             }
 
@@ -121,6 +128,17 @@ public class AgnesService {
         return result;
     }
 
+    public List<ChatMessage> getHistoryByConversation(String userId, String conversationId) {
+        String historyKey = buildHistoryKey(userId, conversationId);
+        return getHistory(historyKey);
+    }
+
+    private String buildHistoryKey(String userId, String conversationId) {
+        if (conversationId != null && !conversationId.isEmpty()) {
+            return "chat:history:" + userId + ":" + conversationId;
+        }
+        return "chat:history:" + userId;
+    }
 
     private String getCurrentUserId() {
         // 优先从 ThreadLocal 获取
@@ -166,7 +184,7 @@ public class AgnesService {
         }
     }
 
-    public void chatStreamReal(final String userMessage, SseEmitter emitter, String userId, String userApiKey) {
+    public void chatStreamReal(final String userMessage, SseEmitter emitter, String userId, String userApiKey, String conversationId) {
         CompletableFuture.runAsync(() -> {
             String fullReply = null;
             String status = "SUCCESS";
@@ -188,7 +206,7 @@ public class AgnesService {
                 // ---------------------------------------------------------
 
                 // 1. 获取历史（使用传入的 userId）
-                String historyKey = "chat:history:" + userId;
+                String historyKey = buildHistoryKey(userId, conversationId);
                 List<ChatMessage> history = getHistory(historyKey);
 
                 List<AgnesChatRequest.Message> messages = new ArrayList<>();
@@ -260,6 +278,13 @@ public class AgnesService {
                     ChatMessage assistantMsg = new ChatMessage("assistant", fullReply);
                     System.out.println("[History] Before save: userMsg=" + userMsg + ", assistantMsg=" + assistantMsg);
                     saveHistory(historyKey, userMsg, assistantMsg);
+                    // 自动更新对话标题（首次消息）
+                    if (conversationId != null && !conversationId.isEmpty() && activeConversationTitle.isEmpty()) {
+                        activeConversationTitle = displayUserMessage.length() > 20
+                                ? displayUserMessage.substring(0, 20) + "..."
+                                : displayUserMessage;
+                        activeConversationId = conversationId;
+                    }
                 }
 
                 // 5. 对话成功后清除暂存文件（无论成功失败可选，推荐成功时清除）

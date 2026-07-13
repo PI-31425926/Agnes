@@ -39,6 +39,17 @@
 
       <!-- 对话界面 -->
       <div v-if="currentTab === 'chat'" class="chat-body">
+        <!-- 对话选择栏 -->
+        <div class="conversation-bar">
+          <select v-model="activeConversationId" @change="switchConversation" class="conv-select">
+            <option value="" disabled>选择或创建对话</option>
+            <option v-for="conv in conversations" :key="conv.id" :value="conv.id">
+              {{ conv.title || '新对话' }}
+            </option>
+          </select>
+          <button @click="createNewConversation" class="new-conv-btn">＋ 新对话</button>
+          <button v-if="activeConversationId" @click="deleteCurrentConversation" class="del-conv-btn">🗑️</button>
+        </div>
         <div class="chat-box" ref="chatBox">
           <div v-for="(msg, idx) in chatMessages" :key="idx" :class="['message-row', msg.role]">
             <div class="bubble">
@@ -270,6 +281,69 @@ const chatMessages = ref([])
 const chatInput = ref('')
 const chatBox = ref(null)
 
+// ==================== 多轮对话管理 ====================
+const conversations = ref([])
+const activeConversationId = ref('')
+let activeConversationTitle = ''
+
+async function loadConversations() {
+  try {
+    const res = await request.get('/conversations')
+    conversations.value = (res || []).map(c => ({
+      ...c,
+      title: decodeURIComponent(c.title || '新对话')
+    }))
+  } catch (e) {}
+}
+
+async function createNewConversation() {
+  try {
+    const res = await request.post('/conversations', '')
+    conversations.value.unshift({ ...res, title: decodeURIComponent(res.title || '新对话') })
+    activeConversationId.value = '' + res.id
+    activeConversationTitle = ''
+    chatMessages.value = []
+    await loadChatHistory()
+  } catch (e) {
+    alert('创建对话失败：' + e.message)
+  }
+}
+
+async function switchConversation() {
+  chatMessages.value = []
+  await loadChatHistory()
+}
+
+async function deleteCurrentConversation() {
+  if (!activeConversationId.value) return
+  if (!confirm('确定删除此对话？')) return
+  try {
+    await request.delete(`/conversations/${activeConversationId.value}`)
+    conversations.value = conversations.value.filter(c => Number(c.id) !== Number(activeConversationId.value))
+    activeConversationId.value = ''
+    activeConversationTitle = ''
+    chatMessages.value = []
+  } catch (e) {
+    alert('删除失败：' + e.message)
+  }
+}
+
+async function loadChatHistory() {
+  try {
+    const cid = activeConversationId.value || undefined
+    const res = await request.get('/chat/history', { params: cid ? { conversationId: cid } : {} })
+    if (res && res.length > 0) {
+      res.forEach(msg => {
+        chatMessages.value.push({ role: msg.role, content: msg.content })
+      })
+      await nextTick()
+      scrollToBottom()
+      stopTts()
+      speechSynthesis.cancel()
+    }
+  } catch (e) {}
+}
+
 // ==================== 文件上传 ====================
 const hasUploadedFile = ref(false)
 const uploadedFileName = ref('')
@@ -283,14 +357,25 @@ let isTtsSpeaking = false      // 是否正在朗读
 let ttsFlushTimer = null       // 定时刷新定时器
 
 async function sendChat() {
-  const text = chatInput.value.trim();
+  // 从 DOM 取原始值，绕过 Vue 响应式
+  const inputEl = document.querySelector('.input-wrapper input')
+  const rawValue = inputEl ? inputEl.value : ''
+  let userMessage = typeof rawValue === 'string' ? rawValue : String(rawValue || '')
+  userMessage = userMessage.trim()
+  console.log('[sendChat] inputEl=', !!inputEl, 'rawValue=', JSON.stringify(rawValue), 'userMessage=', JSON.stringify(userMessage))
   // 有上传文件时允许空消息，后端会用默认问题
-  if (!text && !hasUploadedFile.value) return;
+  if (!userMessage && !hasUploadedFile.value) {
+    console.log('[sendChat] Returning early: no message and no file')
+    return;
+  }
+
+  // 立即保存原始消息，避免任何作用域问题
+  const originalMessage = userMessage;
 
   // 停止任何正在进行的语音朗读
   stopTts()
 
-  chatMessages.value.push({ role: 'user', content: text });
+  chatMessages.value.push({ role: 'user', content: userMessage });
   chatInput.value = '';
   const aiMessage = { role: 'assistant', content: '' };
   chatMessages.value.push(aiMessage);
@@ -298,13 +383,20 @@ async function sendChat() {
 
   try {
     const token = localStorage.getItem('token');
+    const body = { message: originalMessage }
+    if (activeConversationId.value) {
+      body.conversationId = activeConversationId.value
+      console.log('[Chat] Sending conversationId:', activeConversationId.value)
+    } else {
+      console.log('[Chat] No conversationId, value="' + activeConversationId.value + '"')
+    }
     const response = await fetch('/api/chat/stream', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
       },
-      body: JSON.stringify({ message: text })
+      body: JSON.stringify(body)
     });
 
     if (!response.ok) {
@@ -348,6 +440,18 @@ async function sendChat() {
     chatMessages.value[aiIndex].content = '请求失败：' + e.message;
   } finally {
     flushTtsBuffer(true)  // 确保缓冲区清空
+    // 自动更新对话标题（首次消息）
+    console.log('[AutoTitle] activeConversationId=', activeConversationId.value, ', activeConversationTitle=', activeConversationTitle)
+    if (activeConversationId.value && !activeConversationTitle) {
+      activeConversationTitle = originalMessage.substring(0, Math.min(20, originalMessage.length))
+      console.log('[AutoTitle] Updating conversation', activeConversationId.value, 'to', activeConversationTitle)
+      try {
+        await request.put(`/conversations/${activeConversationId.value}/auto-title`, { title: originalMessage })
+        console.log('[AutoTitle] Success')
+      } catch (e2) {
+        console.error('[AutoTitle] Failed:', e2.message)
+      }
+    }
   }
 }
 
@@ -524,7 +628,8 @@ watch(currentTab, async (tab) => {
 onMounted(async () => {
   // 加载对话历史
   try {
-    const res = await request.get('/chat/history')
+    const cid = activeConversationId.value || undefined
+    const res = await request.get('/chat/history', { params: cid ? { conversationId: cid } : {} })
     console.log('[History] Chat history response:', res)
     if (res && res.length > 0) {
       res.forEach(msg => {
@@ -539,6 +644,15 @@ onMounted(async () => {
       speechSynthesis.cancel()
     }
   } catch (e) {}
+
+  // 加载对话列表并创建默认对话
+  await loadConversations()
+  if (conversations.value.length === 0) {
+    await createNewConversation()
+  } else {
+    activeConversationId.value = '' + conversations.value[0].id
+    await loadChatHistory()
+  }
 
   // 如果当前标签是图片相关，加载图片历史（处理刷新情况）
   if (currentTab.value === 'text2img' || currentTab.value === 'img2img') {
@@ -956,6 +1070,44 @@ onUnmounted(() => {
   text-shadow: 0 0 8px #0f0;
   white-space: nowrap;
 }
+
+/* ===== 对话选择栏 ===== */
+.conversation-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-bottom: 1px solid rgba(0, 255, 255, 0.15);
+  background: rgba(0, 255, 255, 0.03);
+}
+.conv-select {
+  flex: 1;
+  padding: 4px 8px;
+  background: rgba(0, 10, 20, 0.8);
+  border: 1px solid rgba(0, 255, 255, 0.3);
+  border-radius: 6px;
+  color: #0ff;
+  font-size: 0.85rem;
+  outline: none;
+  cursor: pointer;
+}
+.conv-select option {
+  background: #0a0c0f;
+  color: #0ff;
+}
+.new-conv-btn, .del-conv-btn {
+  padding: 4px 10px;
+  border: 1px solid rgba(0, 255, 255, 0.3);
+  border-radius: 6px;
+  background: rgba(0, 255, 255, 0.1);
+  color: #0ff;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.new-conv-btn:hover { background: rgba(0, 255, 255, 0.2); }
+.del-conv-btn { color: #ff5252; border-color: rgba(255, 82, 82, 0.3); background: rgba(255, 82, 82, 0.05); }
+.del-conv-btn:hover { background: rgba(255, 82, 82, 0.15); }
 
 /* ===== 对话区域（原有样式微调） ===== */
 .chat-body {
