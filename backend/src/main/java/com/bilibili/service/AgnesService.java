@@ -18,6 +18,8 @@ import org.springframework.web.client.RestTemplate;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.ObjectNode;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -184,7 +186,7 @@ public class AgnesService {
         }
     }
 
-    public void chatStreamReal(final String userMessage, SseEmitter emitter, String userId, String userApiKey, String conversationId) {
+    public void chatStreamReal(final String userMessage, SseEmitter emitter, String userId, String userApiKey, String conversationId, String imageUrl) {
         CompletableFuture.runAsync(() -> {
             String fullReply = null;
             String status = "SUCCESS";
@@ -213,7 +215,28 @@ public class AgnesService {
                 for (ChatMessage msg : history) {
                     messages.add(new AgnesChatRequest.Message(msg.getRole(), msg.getContent()));
                 }
-                messages.add(new AgnesChatRequest.Message("user", userMessage2 != null ? userMessage2 : userMessage));
+
+                // 构建当前用户消息：如果有图片 URL，使用 Vision 格式
+                if (imageUrl != null && !imageUrl.isEmpty()) {
+                    ObjectMapper mapper = new ObjectMapper();
+                    ArrayNode contentArray = mapper.createArrayNode();
+
+                    ObjectNode textPart = contentArray.addObject();
+                    textPart.put("type", "text");
+                    String textForImage = (userMessage2 != null && !userMessage2.isEmpty())
+                            ? userMessage2
+                            : (userMessage != null && !userMessage.isEmpty()) ? userMessage : "请识别这张图片的内容";
+                    textPart.put("text", textForImage);
+
+                    ObjectNode imagePart = contentArray.addObject();
+                    imagePart.put("type", "image_url");
+                    ObjectNode imageNode = imagePart.putObject("image_url");
+                    imageNode.put("url", imageUrl);
+
+                    messages.add(new AgnesChatRequest.Message("user", contentArray));
+                } else {
+                    messages.add(new AgnesChatRequest.Message("user", userMessage2 != null ? userMessage2 : userMessage));
+                }
 
                 // 2. 构建请求头（使用传入的 apiKey）
                 HttpHeaders headers = new HttpHeaders();
@@ -303,7 +326,25 @@ public class AgnesService {
             } finally {
                 // 日志记录使用原始用户消息（不含文档内容），便于审计且避免日志过长
                 logService.log("CHAT", "用户对话（流式）", originalUserMessage, status,
-                        status.equals("SUCCESS") ? fullReply : null,userId);
+                        status.equals("SUCCESS") ? fullReply : null, userId);
+
+                // 图片识别日志：带图片时额外记录 IMAGE_UPLOAD 日志
+                if (imageUrl != null && !imageUrl.isEmpty()) {
+                    String logDesc = "图片识别: " + (originalUserMessage != null && originalUserMessage.length() > 50
+                            ? originalUserMessage.substring(0, 50) + "..."
+                            : originalUserMessage);
+                    String logDetail;
+                    if (status.equals("SUCCESS")) {
+                        logDetail = imageUrl;
+                    } else {
+                        // 只取错误信息前 200 字符，避免超长错误塞满 resultDetail
+                        String errorMsg = fullReply != null && fullReply.length() > 200
+                                ? fullReply.substring(0, 200) + "..."
+                                : (fullReply != null ? fullReply : "unknown");
+                        logDetail = imageUrl + " | " + errorMsg;
+                    }
+                    logService.log("IMAGE_UPLOAD", logDesc, null, status, logDetail, userId);
+                }
             }
         });
     }

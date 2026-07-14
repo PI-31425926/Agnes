@@ -1,6 +1,5 @@
 package com.bilibili.pojo.dto;
 
-import lombok.AllArgsConstructor;
 import lombok.Data;
 
 import java.util.List;
@@ -12,9 +11,18 @@ public class AgnesChatRequest {
     private String conversationId;
 
     @Data
-    @AllArgsConstructor
     public static class Message {
         private String role;
-        private String content;
+        private Object content;  // String (text) or List<Map> (vision format)
+
+        public Message(String role, String content) {
+            this.role = role;
+            this.content = content;
+        }
+
+        public Message(String role, Object content) {
+            this.role = role;
+            this.content = content;
+        }
     }
 }

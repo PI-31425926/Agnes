@@ -64,3 +64,12 @@ export function uploadFile(file) {
 export function clearUploadedFile() {
     return request.delete('/chat/upload')
 }
+
+// 上传图片到 OSS
+export function uploadImage(file) {
+    const formData = new FormData()
+    formData.append('file', file)
+    return request.post('/image/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+    })
+}

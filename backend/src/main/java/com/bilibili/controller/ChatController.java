@@ -43,7 +43,7 @@ public class ChatController {
     // 流式对话（传递用户信息）
     @PostMapping("/stream")
     public SseEmitter chatStream(@RequestBody ChatRequest request) {
-        System.out.println("[ChatController] Received: message='" + request.getMessage() + "', conversationId='" + request.getConversationId() + "'");
+        System.out.println("[ChatController] Received: message='" + request.getMessage() + "', conversationId='" + request.getConversationId() + "', imageUrl='" + request.getImageUrl() + "'");
         // Sa-Token 校验登录
         StpUtil.checkLogin();  // 未登录会自动抛出 NotLoginException
 
@@ -65,7 +65,7 @@ public class ChatController {
         SseEmitter emitter = new SseEmitter(300_000L);
         emitter.onTimeout(() -> emitter.complete());
         emitter.onError(e -> System.err.println("[SSE] 错误: " + e.getMessage()));
-        agnesService.chatStreamReal(request.getMessage(), emitter, userId, apiKey, conversationId);
+        agnesService.chatStreamReal(request.getMessage(), emitter, userId, apiKey, conversationId, request.getImageUrl());
         return emitter;
     }
 

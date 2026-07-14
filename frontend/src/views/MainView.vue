@@ -72,16 +72,30 @@
             📎
             <input type="file" @change="handleFileUpload" accept=".txt,.doc,.docx,.pdf,.xls,.xlsx" hidden />
           </label>
+          <!-- 图片上传按钮 -->
+          <label class="upload-image-btn" title="上传图片">
+            📷
+            <input type="file" @change="(e) => selectImageFile(e.target.files[0])" accept="image/jpeg,image/png,image/webp" hidden />
+          </label>
           <div class="input-wrapper">
             <!-- 文件标签 -->
             <div v-if="hasUploadedFile" class="file-tag">
               📄 {{ uploadedFileName }}
               <button class="remove-file-btn" @click="clearUploadedFile">✕</button>
             </div>
+            <!-- 图片预览标签 -->
+            <div v-if="selectedImage" class="image-preview-bar">
+              <img :src="selectedImage.previewUrl" class="image-preview-thumb" />
+              <span class="image-preview-label">图片</span>
+              <button class="remove-image-btn" @click="removeSelectedImage">✕</button>
+              <span v-if="isUploadingImage" class="uploading-indicator">上传中...</span>
+            </div>
             <input
                 v-model="chatInput"
                 @keyup.enter="sendChat"
                 :placeholder="hasUploadedFile ? '输入问题（留空默认提问）' : '输入消息...'"
+                @paste="handlePaste"
+                @drop.prevent="handleDrop"
             />
           </div>
           <button @click="sendChat">
@@ -255,6 +269,7 @@ const currentTab = ref('chat')
 import { ref, nextTick, watch, computed, onUnmounted, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import request from '@/api/request'
+import { uploadImage as apiUploadImage } from '@/api/chat'
 
 const router = useRouter()
 
@@ -274,6 +289,133 @@ function getErrorMessage(error, defaultMsg = '请求失败') {
     return data.message || (data.error && data.error.message) || defaultMsg
   }
   return error.message || defaultMsg
+}
+
+// Canvas 图片压缩：将图片压缩至 maxSizeBytes 以内
+function compressImage(file, maxSizeBytes) {
+  return new Promise((resolve) => {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const img = new Image()
+      img.onload = () => {
+        // 先 resize 到最大边长 1920
+        let width = img.width
+        let height = img.height
+        const maxDim = 1920
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = (height / width) * maxDim
+            width = maxDim
+          } else {
+            width = (width / height) * maxDim
+            height = maxDim
+          }
+        }
+
+        let quality = 0.8
+        let blob = null
+
+        function tryCompress() {
+          const canvas = document.createElement('canvas')
+          canvas.width = Math.round(width)
+          canvas.height = Math.round(height)
+          const ctx = canvas.getContext('2d')
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+
+          canvas.toBlob((b) => {
+            if (b && b.size <= maxSizeBytes) {
+              resolve(b)
+            } else if (quality > 0.3) {
+              quality -= 0.1
+              tryCompress()
+            } else {
+              // 最低质量仍超限，返回最小体积
+              resolve(b)
+            }
+          }, 'image/jpeg', quality)
+        }
+        tryCompress()
+      }
+      img.src = e.target.result
+    }
+    reader.readAsDataURL(file)
+  })
+}
+
+// 选择图片文件（按钮/拖拽/粘贴共用入口）
+async function selectImageFile(file) {
+  if (!file) return
+
+  // 校验格式
+  const ext = '.' + (file.name.split('.').pop() || '').toLowerCase()
+  const typeValid = ALLOWED_IMAGE_TYPES.includes(file.type)
+  const extValid = ALLOWED_IMAGE_EXTENSIONS.includes(ext)
+  if (!typeValid && !extValid) {
+    alert('不支持的图片格式，仅支持 jpg/png/webp')
+    return
+  }
+
+  // 如果已有图片，提示先移除
+  if (selectedImage.value) {
+    alert('已有一张图片，请先移除当前图片')
+    return
+  }
+
+  let processedFile = file
+
+  // 超过 1MB 则压缩
+  if (file.size > IMAGE_MAX_SIZE) {
+    try {
+      processedFile = await compressImage(file, IMAGE_MAX_SIZE)
+    } catch (e) {
+      alert('图片压缩失败：' + e.message)
+      return
+    }
+  }
+
+  // 生成预览
+  const reader = new FileReader()
+  reader.onload = (e) => {
+    selectedImage.value = {
+      file: processedFile,
+      previewUrl: e.target.result,
+      url: null  // 上传成功后填充
+    }
+  }
+  reader.readAsDataURL(processedFile)
+}
+
+// 移除已选图片
+function removeSelectedImage() {
+  if (selectedImage.value && selectedImage.value.previewUrl) {
+    URL.revokeObjectURL(selectedImage.value.previewUrl)
+  }
+  selectedImage.value = null
+}
+
+// 处理粘贴图片（Ctrl+V）
+function handlePaste(e) {
+  const items = e.clipboardData?.items
+  if (!items) return
+  for (const item of items) {
+    if (item.type.startsWith('image/')) {
+      e.preventDefault()
+      const file = item.getAsFile()
+      if (file) selectImageFile(file)
+      return
+    }
+  }
+}
+
+// 处理拖拽图片
+function handleDrop(e) {
+  e.preventDefault()
+  const files = e.dataTransfer?.files
+  if (!files || files.length === 0) return
+  const file = files[0]
+  if (file.type.startsWith('image/')) {
+    selectImageFile(file)
+  }
 }
 
 // ==================== 对话 ====================
@@ -349,6 +491,13 @@ const hasUploadedFile = ref(false)
 const uploadedFileName = ref('')
 //const isUploading = ref(false)
 
+// ==================== 图片上传 ====================
+const selectedImage = ref(null)  // { file, previewUrl, url }
+const isUploadingImage = ref(false)
+const IMAGE_MAX_SIZE = 1 * 1024 * 1024  // 1MB
+const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp']
+const ALLOWED_IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp']
+
 // TTS 自动朗读相关
 // TTS 自动朗读（缓冲句子）
 let ttsBuffer = ''             // 文本缓冲区
@@ -372,6 +521,22 @@ async function sendChat() {
   // 立即保存原始消息，避免任何作用域问题
   const originalMessage = userMessage;
 
+  // 如果有图片，先上传到 OSS
+  if (selectedImage.value && !selectedImage.value.url) {
+    isUploadingImage.value = true
+    try {
+      const url = await apiUploadImage(selectedImage.value.file)
+      selectedImage.value.url = url
+      console.log('[Chat] Image uploaded, URL:', url)
+    } catch (e) {
+      chatMessages.value[aiIndex].content = '图片上传失败：' + getErrorMessage(e)
+      isUploadingImage.value = false
+      return
+    } finally {
+      isUploadingImage.value = false
+    }
+  }
+
   // 停止任何正在进行的语音朗读
   stopTts()
 
@@ -389,6 +554,11 @@ async function sendChat() {
       console.log('[Chat] Sending conversationId:', activeConversationId.value)
     } else {
       console.log('[Chat] No conversationId, value="' + activeConversationId.value + '"')
+    }
+    // 附加图片 URL
+    if (selectedImage.value && selectedImage.value.url) {
+      body.imageUrl = selectedImage.value.url
+      console.log('[Chat] Sending imageUrl:', selectedImage.value.url)
     }
     const response = await fetch('/api/chat/stream', {
       method: 'POST',
@@ -440,6 +610,13 @@ async function sendChat() {
     chatMessages.value[aiIndex].content = '请求失败：' + e.message;
   } finally {
     flushTtsBuffer(true)  // 确保缓冲区清空
+    // 发送成功后清空图片选择
+    if (selectedImage.value) {
+      if (selectedImage.value.previewUrl) {
+        URL.revokeObjectURL(selectedImage.value.previewUrl)
+      }
+      selectedImage.value = null
+    }
     // 自动更新对话标题（首次消息）
     console.log('[AutoTitle] activeConversationId=', activeConversationId.value, ', activeConversationTitle=', activeConversationTitle)
     if (activeConversationId.value && !activeConversationTitle) {
@@ -1683,6 +1860,62 @@ onUnmounted(() => {
 .upload-file-btn:hover {
   background: rgba(0,255,255,0.25);
   box-shadow: 0 0 10px #0ff;
+}
+
+.upload-image-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(0,255,255,0.1);
+  border: 1px solid rgba(0,255,255,0.3);
+  color: #0ff;
+  font-size: 1.1rem;
+  cursor: pointer;
+  transition: all 0.3s;
+  margin-right: 8px;
+}
+.upload-image-btn:hover {
+  background: rgba(0,255,255,0.25);
+  box-shadow: 0 0 10px #0ff;
+}
+
+.image-preview-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(0,255,255,0.08);
+  border: 1px solid rgba(0,255,255,0.3);
+  border-radius: 8px;
+  padding: 4px 8px;
+  font-size: 0.8rem;
+  color: #0ff;
+  width: fit-content;
+}
+.image-preview-thumb {
+  width: 36px;
+  height: 36px;
+  object-fit: cover;
+  border-radius: 4px;
+  border: 1px solid rgba(0,255,255,0.3);
+}
+.image-preview-label {
+  color: rgba(0,255,255,0.7);
+}
+.remove-image-btn {
+  background: none;
+  border: none;
+  color: #ff5252;
+  cursor: pointer;
+  font-size: 0.9rem;
+  padding: 0 2px;
+  line-height: 1;
+}
+.uploading-indicator {
+  color: rgba(0,255,255,0.5);
+  font-size: 0.75rem;
 }
 
 .input-wrapper {

@@ -57,3 +57,10 @@ sa-token:
   is-read-head: true             # 从请求头读 Token
   token-prefix: "Bearer"         # 前缀 (前端无需改动)
   # 其他配置可按需调整
+
+oss:
+  endpoint: oss-cn-beijing.aliyuncs.com
+  bucket-name: java-ai-tlias-002
+  access-key-id: YOUR_OSS_ACCESS_KEY_ID
+  access-key-secret: YOUR_OSS_ACCESS_KEY_SECRET
+  cname-url: https://java-ai-tlias-002.oss-cn-beijing.aliyuncs.com
