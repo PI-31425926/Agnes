@@ -13,6 +13,8 @@ import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
+import java.util.Map;
+
 @Service
 public class AgnesVideoService {
     @Value("${agnes.video-api-url}")
@@ -40,26 +42,28 @@ public class AgnesVideoService {
     }
 
     /**
-     * 创建视频任务（用户操作）
+     * 创建视频任务（用户操作，纯文生视频）
      */
     public AgnesVideoCreateResponse createVideoTask(String prompt, int width, int height, int numFrames, int frameRate, String apiKey) {
+        return createVideoTask(prompt, width, height, numFrames, frameRate, (String) null, (Map<String, Object>) null, "ti2vid", apiKey);
+    }
+
+    /**
+     * 创建视频任务（完整重载，支持图生视频 / 关键帧）
+     */
+    public AgnesVideoCreateResponse createVideoTask(
+            String prompt, int width, int height, int numFrames, int frameRate,
+            String imageUrl, Map<String, Object> extraBody, String mode, String apiKey) {
         AgnesVideoCreateResponse result = null;
         String status = "SUCCESS";
         String errorMsg = null;
-        String userId = StpUtil.getLoginIdAsString();   // 确保已登录
+        String userId = StpUtil.getLoginIdAsString();
         try {
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
-            //String apiKey = getCurrentUserApiKey();
             headers.setBearerAuth(apiKey);
 
-            AgnesVideoCreateRequest body = new AgnesVideoCreateRequest();
-            body.setModel(videoModel);
-            body.setPrompt(prompt);
-            body.setWidth(width);
-            body.setHeight(height);
-            body.setNumFrames(numFrames);
-            body.setFrameRate(frameRate);
+            AgnesVideoCreateRequest body = buildVideoRequestBody(prompt, width, height, numFrames, frameRate, imageUrl, extraBody, mode);
 
             HttpEntity<AgnesVideoCreateRequest> entity = new HttpEntity<>(body, headers);
 
@@ -76,11 +80,55 @@ public class AgnesVideoService {
             throw new RuntimeException("视频任务创建失败: " + errorMsg, e);
         } finally {
             // 记录日志
-            String description = String.format("文生视频：%dx%d, %d帧, %dfps", width, height, numFrames, frameRate);
+            String modeLabel = "ti2vid".equals(mode) ? "文生视频" : "i2vid".equals(mode) ? "图生视频" : "关键帧动画";
+            String description = String.format("%s：%dx%d, %d帧, %dfps", modeLabel, width, height, numFrames, frameRate);
             String resultDetail = result != null ? result.getVideoId() : errorMsg;
-            logService.log("VIDEO_GENERATION", description, prompt, status, resultDetail,userId);
+            logService.log("VIDEO_GENERATION", description, prompt, status, resultDetail, userId);
         }
         return result;
+    }
+
+    /**
+     * 根据模式和图片参数组装视频生成请求体
+     */
+    private AgnesVideoCreateRequest buildVideoRequestBody(
+            String prompt, int width, int height, int numFrames, int frameRate,
+            String imageUrl, Map<String, Object> extraBody, String mode) {
+        AgnesVideoCreateRequest request = new AgnesVideoCreateRequest();
+        request.setModel(videoModel);
+        request.setPrompt(prompt);
+        request.setWidth(width);
+        request.setHeight(height);
+        request.setNumFrames(numFrames);
+        request.setFrameRate(frameRate);
+
+        if ("keyframes".equals(mode) && extraBody != null) {
+            request.setMode(mode);
+            request.setExtraBody(extraBody);
+        } else if ("i2vid".equals(mode) && imageUrl != null) {
+            request.setImage(imageUrl);
+            // mode 字段对于图生视频需要省略
+        } else {
+            // 文生视频：mode 字段也需要省略
+        }
+
+        return request;
+    }
+
+    /**
+     * 图生视频（便捷方法）
+     */
+    public AgnesVideoCreateResponse createVideoTaskWithImage(
+            String prompt, String imageUrl, int width, int height, int numFrames, int frameRate, String apiKey) {
+        return createVideoTask(prompt, width, height, numFrames, frameRate, imageUrl, null, "i2vid", apiKey);
+    }
+
+    /**
+     * 关键帧动画（便捷方法）
+     */
+    public AgnesVideoCreateResponse createVideoTaskWithKeyframes(
+            String prompt, Map<String, Object> extraBody, int width, int height, int numFrames, int frameRate, String apiKey) {
+        return createVideoTask(prompt, width, height, numFrames, frameRate, null, extraBody, "keyframes", apiKey);
     }
 
     /**

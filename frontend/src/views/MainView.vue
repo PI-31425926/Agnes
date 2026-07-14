@@ -218,6 +218,15 @@
             <div class="prompt-area">
               <textarea v-model="videoPrompt" placeholder="描述视频内容..." rows="2"></textarea>
               <div class="options-row">
+                <!-- 模式选择器 -->
+                <div class="param-group">
+                  <label>模式</label>
+                  <select v-model="videoMode" class="param-select">
+                    <option value="ti2vid">文生视频</option>
+                    <option value="i2vid">图生视频</option>
+                    <option value="keyframes">关键帧动画</option>
+                  </select>
+                </div>
                 <div class="param-group"><label>宽</label><input type="number" v-model.number="videoWidth" class="param-input"/></div>
                 <div class="param-group"><label>高</label><input type="number" v-model.number="videoHeight" class="param-input"/></div>
                 <div class="param-group">
@@ -231,6 +240,35 @@
                 </div>
                 <div class="param-group"><label>帧率</label><input type="number" v-model.number="videoFrameRate" class="param-input"/></div>
                 <button class="generate-btn" @click="submitVideoTask">⚡ 提交</button>
+              </div>
+              <!-- 图生视频：单图上传 -->
+              <div v-if="videoMode === 'i2vid'" class="video-image-upload">
+                <div class="upload-row">
+                  <label class="upload-btn">
+                    📁 选择图片
+                    <input type="file" accept="image/jpeg,image/png,image/webp" @change="handleVideoImageUpload" hidden />
+                  </label>
+                  <div v-if="videoImageFiles.length > 0" class="preview-box">
+                    <img :src="videoImageFiles[0].previewUrl" class="preview-img" />
+                    <button class="remove-btn" @click="removeVideoImage(0)">✕</button>
+                    <span v-if="isUploadingVideoImages" class="uploading-indicator">上传中...</span>
+                  </div>
+                </div>
+              </div>
+              <!-- 关键帧动画：多图上传 -->
+              <div v-if="videoMode === 'keyframes'" class="video-image-upload">
+                <div class="upload-row">
+                  <label class="upload-btn">
+                    📁 选择关键帧（最多10张）
+                    <input type="file" accept="image/jpeg,image/png,image/webp" multiple @change="handleVideoKeyframeUpload" hidden />
+                  </label>
+                </div>
+                <div v-if="videoKeyframeFiles.length > 0" class="keyframe-previews">
+                  <div v-for="(kf, idx) in videoKeyframeFiles" :key="idx" class="keyframe-thumb">
+                    <img :src="kf.previewUrl" class="preview-img" />
+                    <button class="remove-btn" @click="removeVideoKeyframe(idx)">✕</button>
+                  </div>
+                </div>
               </div>
             </div>
           </details>
@@ -941,6 +979,22 @@ const videoWidth = ref(1152)
 const videoHeight = ref(768)
 const videoNumFrames = ref(121)
 const videoFrameRate = ref(24)
+const videoMode = ref('ti2vid')  // ti2vid / i2vid / keyframes
+
+// 视频图片上传（复用 OSS 上传）
+const videoImageFiles = ref([])  // 图生视频单图
+const videoKeyframeFiles = ref([])  // 关键帧多图
+const videoImageUrls = ref([])  // 已上传的图片 URL 数组
+const isUploadingVideoImages = ref(false)
+
+// 模式切换时清空图片
+watch(videoMode, (newMode) => {
+  if (newMode === 'i2vid') {
+    videoKeyframeFiles.value = []
+  } else if (newMode === 'keyframes') {
+    videoImageFiles.value = []
+  }
+})
 
 const videoTasks = ref([])
 const previousCompleted = ref(new Set())
@@ -962,29 +1016,6 @@ const statusMap = {
 const sortedVideoTasks = computed(() => {
   return [...videoTasks.value].sort((a, b) => b.createdAt - a.createdAt)
 })
-
-// 提交新视频任务
-async function submitVideoTask() {
-  const prompt = videoPrompt.value.trim()
-  if (!prompt) return
-  try {
-    const res = await request.post('/video/generate', {
-      prompt,
-      width: videoWidth.value,
-      height: videoHeight.value,
-      numFrames: videoNumFrames.value,
-      frameRate: videoFrameRate.value
-    })
-    if (res && res.taskId) {
-      fetchVideoTasks()     // 刷新队列
-      videoPrompt.value = ''
-    } else {
-      alert('提交失败：返回数据异常')
-    }
-  } catch (e) {
-    alert('提交失败：' + getErrorMessage(e))
-  }
-}
 
 // 拉取任务列表（降级轮询用）
 async function fetchVideoTasks() {
@@ -1105,6 +1136,137 @@ async function deleteVideoTask(videoId) {
     fetchVideoTasks()
   } catch (e) {
     alert('删除失败：' + getErrorMessage(e))
+  }
+}
+
+// ==================== 视频图片上传 ====================
+const ALLOWED_VIDEO_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp']
+const VIDEO_IMAGE_MAX_SIZE = 5 * 1024 * 1024  // 5MB
+
+// 图生视频单图上传
+function handleVideoImageUpload(e) {
+  const file = e.target.files[0]
+  if (!file) return
+  videoImageFiles.value = [{ file, previewUrl: null }]
+  const reader = new FileReader()
+  reader.onload = (event) => {
+    videoImageFiles.value[0].previewUrl = event.target.result
+  }
+  reader.readAsDataURL(file)
+}
+
+// 关键帧多图上传
+function handleVideoKeyframeUpload(e) {
+  const files = Array.from(e.target.files || [])
+  if (files.length === 0) return
+  if (files.length > 10) {
+    alert('关键帧最多支持 10 张图片')
+    return
+  }
+  console.log('[Video] 关键帧选择', files.length, '张文件:', files.map(f => f.name))
+  videoKeyframeFiles.value = files.map(file => ({ file, previewUrl: null }))
+  console.log('[Video] videoKeyframeFiles 长度:', videoKeyframeFiles.value.length)
+  // 逐个读取预览
+  videoKeyframeFiles.value.forEach((kf, idx) => {
+    const reader = new FileReader()
+    reader.onload = (event) => {
+      kf.previewUrl = event.target.result
+      console.log('[Video] 预览加载完成 #', idx, kf.previewUrl ? 'OK' : 'FAIL')
+    }
+    reader.readAsDataURL(files[idx])
+  })
+  // 重置 input，允许重复选择同一文件
+  e.target.value = ''
+}
+
+// 删除图生视频图片
+function removeVideoImage() {
+  videoImageFiles.value = []
+  videoImageUrls.value = []
+}
+
+// 删除关键帧图片
+function removeVideoKeyframe(idx) {
+  videoKeyframeFiles.value.splice(idx, 1)
+  videoImageUrls.value = videoImageUrls.value.filter((_, i) => i !== idx)
+}
+
+// 上传图片到 OSS（单张）
+async function uploadVideoImage(file) {
+  const formData = new FormData()
+  formData.append('file', file)
+  return request.post('/video/upload-image', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  })
+}
+
+// 上传图片到 OSS（多张）
+async function uploadVideoImages(files) {
+  const formData = new FormData()
+  files.forEach(f => formData.append('files', f))
+  return request.post('/video/upload-images', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  })
+}
+
+// 提交视频任务（更新版）
+async function submitVideoTask() {
+  const prompt = videoPrompt.value.trim()
+  if (!prompt) return
+
+  // 图生视频需要图片
+  if (videoMode.value === 'i2vid' && videoImageFiles.value.length === 0) {
+    alert('图生视频需要上传一张参考图片')
+    return
+  }
+
+  // 关键帧需要图片
+  if (videoMode.value === 'keyframes' && videoKeyframeFiles.value.length === 0) {
+    alert('关键帧动画需要上传至少一张参考图片')
+    return
+  }
+
+  try {
+    // 上传图片到 OSS
+    let imageUrls = []
+    if (videoMode.value === 'i2vid') {
+      isUploadingVideoImages.value = true
+      const file = videoImageFiles.value[0]?.file
+      if (file) {
+        const url = await uploadVideoImage(file)
+        imageUrls = [url]
+      }
+      isUploadingVideoImages.value = false
+    } else if (videoMode.value === 'keyframes') {
+      isUploadingVideoImages.value = true
+      const files = videoKeyframeFiles.value.map(kf => kf.file)
+      if (files.length > 0) {
+        const urls = await uploadVideoImages(files)
+        imageUrls = urls
+      }
+      isUploadingVideoImages.value = false
+    }
+
+    const res = await request.post('/video/generate', {
+      prompt,
+      mode: videoMode.value,
+      imageUrls,
+      width: videoWidth.value,
+      height: videoHeight.value,
+      numFrames: videoNumFrames.value,
+      frameRate: videoFrameRate.value
+    })
+    if (res && res.taskId) {
+      fetchVideoTasks()
+      videoPrompt.value = ''
+      videoImageFiles.value = []
+      videoKeyframeFiles.value = []
+      videoImageUrls.value = []
+    } else {
+      alert('提交失败：返回数据异常')
+    }
+  } catch (e) {
+    alert('提交失败：' + getErrorMessage(e))
   }
 }
 
@@ -1772,6 +1934,51 @@ onUnmounted(() => {
   color: #ff5252;
   cursor: pointer;
   font-size: 1rem;
+}
+
+/* 视频图片上传区域 */
+.video-image-upload {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(0, 255, 255, 0.15);
+}
+
+.keyframe-previews {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.keyframe-thumb {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  border: 1px solid rgba(0, 255, 255, 0.3);
+  border-radius: 8px;
+  overflow: hidden;
+  transition: box-shadow 0.2s;
+}
+
+.keyframe-thumb:hover {
+  box-shadow: 0 0 10px rgba(0, 255, 255, 0.4);
+}
+
+/* 模式选择器下拉框样式 */
+.param-select {
+  padding: 4px 8px;
+  background: rgba(0, 10, 20, 0.8);
+  border: 1px solid rgba(0, 255, 255, 0.4);
+  border-radius: 6px;
+  color: #fff;
+  font-size: 0.85rem;
+  outline: none;
+  cursor: pointer;
+}
+
+.param-select option {
+  background: #0a0c0f;
+  color: #0ff;
 }
 
 .image-history {
