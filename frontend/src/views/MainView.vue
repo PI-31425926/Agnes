@@ -303,13 +303,26 @@
 </template>
 
 <script setup>
-const currentTab = ref('chat')
 import { ref, nextTick, watch, computed, onUnmounted, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import request from '@/api/request'
 import { uploadImage as apiUploadImage } from '@/api/chat'
 
+const currentTab = ref('chat')
 const router = useRouter()
+
+// ==================== 游客模式拦截 ====================
+const isGuest = computed(() => localStorage.getItem('isGuest') === 'true')
+
+function requireAuth(actionName) {
+  if (isGuest.value) {
+    alert('游客模式暂不可用，请先注册或登录后使用。')
+    return false
+  }
+  return true
+}
+
+// ==================== 工具函数 ====================
 
 // 用户角色（从 localStorage 读取，登录时已存储）
 const userRole = ref(localStorage.getItem('role'))
@@ -382,6 +395,7 @@ function compressImage(file, maxSizeBytes) {
 
 // 选择图片文件（按钮/拖拽/粘贴共用入口）
 async function selectImageFile(file) {
+  if (!requireAuth('上传图片')) return
   if (!file) return
 
   // 校验格式
@@ -477,6 +491,7 @@ async function loadConversations() {
 }
 
 async function createNewConversation() {
+  if (!requireAuth('新建对话')) return
   try {
     const res = await request.post('/conversations', '')
     conversations.value.unshift({ ...res, title: decodeURIComponent(res.title || '新对话') })
@@ -495,6 +510,7 @@ async function switchConversation() {
 }
 
 async function deleteCurrentConversation() {
+  if (!requireAuth('删除对话')) return
   if (!activeConversationId.value) return
   if (!confirm('确定删除此对话？')) return
   try {
@@ -544,6 +560,7 @@ let isTtsSpeaking = false      // 是否正在朗读
 let ttsFlushTimer = null       // 定时刷新定时器
 
 async function sendChat() {
+  if (!requireAuth('发送消息')) return
   // 从 DOM 取原始值，绕过 Vue 响应式
   const inputEl = document.querySelector('.input-wrapper input')
   const rawValue = inputEl ? inputEl.value : ''
@@ -753,6 +770,7 @@ function scrollToBottom() {
 const isUploading = ref(false)
 
 async function handleFileUpload(e) {
+  if (!requireAuth('文件上传')) return
   const file = e.target.files[0]
   if (!file) return
 
@@ -785,6 +803,7 @@ async function handleFileUpload(e) {
 
 // 清除上传文件
 async function clearUploadedFile() {
+  if (!requireAuth('清除上传文件')) return
   try {
     await request.delete('/chat/upload')
   } catch (e) {}
@@ -882,6 +901,7 @@ const text2imgResult = ref(null)
 const text2imgGenerating = ref(false)
 
 async function generateText2img() {
+  if (!requireAuth('文生图')) return
   const prompt = text2imgPrompt.value.trim()
   if (!prompt) return
   text2imgGenerating.value = true
@@ -912,6 +932,7 @@ const uploadedImagePreview = ref(null)
 const uploadedImageBase64 = ref(null)
 
 function handleImageUpload(e) {
+  if (!requireAuth('上传图片')) return
   const file = e.target.files[0]
   if (!file) return
   const reader = new FileReader()
@@ -931,6 +952,7 @@ function clearUploadedImage() {
 }
 
 async function generateImg2img() {
+  if (!requireAuth('图生图')) return
   if (!uploadedImageBase64.value) return
   const prompt = img2imgPrompt.value.trim()
   img2imgGenerating.value = true
@@ -1131,6 +1153,7 @@ function closeVideoWebSocket() {
 
 // 删除视频任务
 async function deleteVideoTask(videoId) {
+  if (!requireAuth('删除视频任务')) return
   try {
     await request.delete(`/video/tasks/${videoId}`)
     fetchVideoTasks()
@@ -1145,6 +1168,7 @@ const VIDEO_IMAGE_MAX_SIZE = 5 * 1024 * 1024  // 5MB
 
 // 图生视频单图上传
 function handleVideoImageUpload(e) {
+  if (!requireAuth('上传图片')) return
   const file = e.target.files[0]
   if (!file) return
   videoImageFiles.value = [{ file, previewUrl: null }]
@@ -1157,6 +1181,7 @@ function handleVideoImageUpload(e) {
 
 // 关键帧多图上传
 function handleVideoKeyframeUpload(e) {
+  if (!requireAuth('上传图片')) return
   const files = Array.from(e.target.files || [])
   if (files.length === 0) return
   if (files.length > 10) {
@@ -1211,6 +1236,7 @@ async function uploadVideoImages(files) {
 
 // 提交视频任务（更新版）
 async function submitVideoTask() {
+  if (!requireAuth('视频生成')) return
   const prompt = videoPrompt.value.trim()
   if (!prompt) return
 

@@ -33,6 +33,11 @@ public class GuestController {
     @Autowired
     private AgnesService agnesService;
 
+    /**
+     * 游客对话（已弃用）
+     * 游客模式已改为仅浏览，此端点保留仅供第三方兼容，前端不再调用。
+     */
+    @Deprecated
     @PostMapping("/chat")
     public ApiResponse<Map<String, String>> chat(@RequestBody Map<String, String> body, HttpServletRequest request) {
         String ip = IpUtils.getClientIp(request);

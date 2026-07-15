@@ -349,6 +349,12 @@ public class AgnesService {
         });
     }
 
+    /**
+     * 游客对话（已弃用）
+     * 游客模式已改为仅浏览，此方法不再被前端调用。保留以兼容第三方调用。
+     * 不记录操作日志（游客无身份标识，日志审计价值低）。
+     */
+    @Deprecated
     public String chatWithApiKey(String message, String apiKey, String phone) {
         String fullReply = null;
         String status = "SUCCESS";
@@ -382,14 +388,8 @@ public class AgnesService {
 
             return fullReply;
         } catch (Exception e) {
-            status = "FAILED";
-            fullReply = "请求失败：" + e.getMessage();
             System.err.println("[Guest Chat] 异常: " + e.getMessage());
             throw new RuntimeException(e);
-        } finally {
-            // 记录日志（使用随机用户的手机号，便于追踪）
-            logService.log("CHAT", "游客对话", originalUserMessage, status,
-                    status.equals("SUCCESS") ? fullReply : null, phone);
         }
     }
 }

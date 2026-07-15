@@ -32,9 +32,20 @@ const router = createRouter({
 
 router.beforeEach((to, from, next) => {
   const token = localStorage.getItem('token')
+  const isGuest = localStorage.getItem('isGuest')
+
+  // 游客模式：允许访问 MainView（/），但禁止访问 AdminView
+  if (to.path === '/') {
+    next()
+    return
+  }
+
   if (to.meta.requiresAuth && !token) {
     next('/login')
-  } else if (to.meta.role) {
+    return
+  }
+
+  if (to.meta.role) {
     const userRole = localStorage.getItem('role')
     if (userRole !== to.meta.role) {
       next('/')   // 权限不足，跳转首页

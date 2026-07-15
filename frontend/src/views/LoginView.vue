@@ -102,6 +102,7 @@ async function submit() {
     if (isLogin.value) {
       localStorage.setItem('token', res.token)
       localStorage.setItem('role', res.role)
+      localStorage.removeItem('isGuest')
       router.push('/')
     } else {
       alert('注册成功，请登录')
