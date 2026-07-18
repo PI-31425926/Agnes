@@ -2,7 +2,7 @@
 // Each node defines: input (what it consumes), output (what it produces)
 export const NODE_TYPES = {
   text_input:       { label: '文本输入',   category: 'text', icon: '📝', input: ['text'],        output: ['text'],      consumer: false },
-  text_refine:      { label: '文本优化',   category: 'text', icon: '✨', input: ['text'],        output: ['text'],      consumer: false },
+  text_refine:      { label: '文本优化',   category: 'text', icon: '✨', input: ['text'],        output: ['text'],      consumer: false, hidden: true },
   text_chat:        { label: '文本对话',   category: 'text', icon: '💬', input: ['text'],        output: ['text'],      consumer: true },
   text_to_image:    { label: '文生图',     category: 'image',icon: '🖼️', input: ['text'],        output: ['image'],     consumer: false },
   image_to_image:   { label: '图生图',     category: 'image',icon: '🎨', input: ['image','text'],output: ['image'],     consumer: false },
@@ -22,6 +22,7 @@ export const LABELS = {
 const categoryOrder = ['text', 'image', 'video']
 const nodeCategories = {}
 for (const [type, info] of Object.entries(NODE_TYPES)) {
+  if (info.hidden) continue
   if (!nodeCategories[info.category]) nodeCategories[info.category] = []
   nodeCategories[info.category].push({ type, ...info })
 }

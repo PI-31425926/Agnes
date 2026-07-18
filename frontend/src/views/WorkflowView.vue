@@ -203,11 +203,14 @@ function onConfigUpdate(newData) {
   const idx = nodes.value.findIndex(n => n.id === selectedNode.value.id)
   console.log('[Workflow] onConfigUpdate: idx=', idx, 'newData=', newData)
   if (idx !== -1) {
-    nodes.value[idx] = {
+    const updatedNode = {
       ...nodes.value[idx],
       data: { ...nodes.value[idx].data, ...newData }
     }
-    console.log('[Workflow] onConfigUpdate: updated node.data.prompt =', nodes.value[idx].data.prompt)
+    nodes.value[idx] = updatedNode
+    // Reassign selectedNode to the updated reference so config panel refreshes
+    selectedNode.value = updatedNode
+    console.log('[Workflow] onConfigUpdate: updated node.data.prompt =', updatedNode.data.prompt)
   }
 }
 

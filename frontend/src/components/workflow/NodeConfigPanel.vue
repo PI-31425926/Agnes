@@ -9,6 +9,19 @@
       </div>
     </div>
     <div class="panel-body">
+      <!-- Refine prompt button for generation nodes -->
+      <div v-if="isGenerateNode" class="refine-section">
+        <button
+          @click="onRefinePrompt"
+          :disabled="!canRefine || refining"
+          class="refine-btn"
+          :class="{ 'refine-btn--loading': refining }"
+        >
+          {{ refining ? '优化中...' : '✨ 优化提示词' }}
+        </button>
+        <div v-if="refineError" class="refine-error">{{ refineError }}</div>
+      </div>
+
       <!-- Execution result display -->
       <div v-if="executionResults[node.id]" class="execution-result">
         <div class="result-label">执行结果:</div>
@@ -93,8 +106,9 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { NODE_TYPES } from './nodeTypes.js'
+import { usePromptRefine } from '../../composables/usePromptRefine.js'
 
 const props = defineProps({
   node: { type: Object, required: true },
@@ -107,6 +121,29 @@ const type = computed(() => props.node?.data?.rawType || props.node?.type || '')
 const nodeData = computed(() => props.node?.data || {})
 const nodeId = computed(() => props.node?.id || '')
 const nodeInfo = NODE_TYPES[type.value] || { label: type.value, icon: '⚙️' }
+
+const GENERATE_NODE_TYPES = ['text_to_image', 'image_to_image', 'text_to_video', 'image_to_video', 'keyframe_animation']
+const isGenerateNode = computed(() => GENERATE_NODE_TYPES.includes(type.value))
+
+const { refinePrompt, loading: refining, error: refineError } = usePromptRefine()
+const canRefine = computed(() => {
+  const prompt = nodeData.value?.prompt
+  return prompt && prompt.trim().length > 0
+})
+
+async function onRefinePrompt() {
+  const prompt = nodeData.value?.prompt
+  if (!prompt || prompt.trim().length === 0) {
+    alert('请先输入提示词内容')
+    return
+  }
+  try {
+    const refined = await refinePrompt(type.value, prompt)
+    emit('configUpdate', { prompt: refined })
+  } catch (e) {
+    // Error already shown by usePromptRefine
+  }
+}
 
 const imageUrlsStr = computed({
   get: () => (nodeData.value.image_urls || []).join(', '),
@@ -174,6 +211,44 @@ function formatOutput(output) {
   cursor: pointer; padding: 0 4px;
 }
 .close-btn:hover { color: #fff; }
+
+.refine-section {
+  margin-bottom: 12px;
+}
+
+.refine-btn {
+  width: 100%;
+  background: rgba(0, 255, 255, 0.08);
+  border: 1px solid #0ff;
+  color: #0ff;
+  border-radius: 4px;
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 0.2s;
+}
+.refine-btn:hover:not(:disabled) {
+  background: rgba(0, 255, 255, 0.15);
+}
+.refine-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.refine-btn--loading {
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.refine-error {
+  margin-top: 4px;
+  font-size: 11px;
+  color: #f88;
+  word-break: break-word;
+}
 
 .panel-body { padding: 12px; }
 
