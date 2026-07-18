@@ -3,6 +3,7 @@ import LoginView from '../views/LoginView.vue'
 import MainView from '../views/MainView.vue'
 import GuestView from "../views/GuestView.vue";
 import AdminView from "../views/AdminView.vue";
+import WorkflowView from '../views/WorkflowView.vue'
 
 const routes = [
   {
@@ -22,6 +23,11 @@ const routes = [
     path: '/admin',
     component: AdminView,
     meta: { requiresAuth: true, role: 'ADMIN' }
+  },
+  {
+    path: '/workflow',
+    component: WorkflowView,
+    meta: { requiresAuth: true }
   }
 ]
 

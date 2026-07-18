@@ -1,5 +1,8 @@
 import './assets/main.css'     // CSS 放在最顶部
 
+import '@vue-flow/core/dist/style.css'
+import '@vue-flow/core/dist/theme-default.css'
+
 import { createApp } from 'vue'
 import App from './App.vue'
 import router from './router'

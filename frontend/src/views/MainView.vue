@@ -26,6 +26,7 @@
               :class="['tab-btn', { active: currentTab === 'video' }]"
               @click="currentTab = 'video'"
           >🎬 视频</button>
+          <button class="tab-btn" @click="goWorkflow">⚡ 工作流</button>
           <button class="logout-btn" @click="logout">🚪 退出</button>
         </div>
         <!-- 管理员入口按钮 -->
@@ -330,6 +331,11 @@ const userRole = ref(localStorage.getItem('role'))
 // 跳转到管理页面
 function goAdmin() {
   router.push('/admin')
+}
+
+// 跳转到工作流页面
+function goWorkflow() {
+  router.push('/workflow')
 }
 
 // ==================== 工具函数 ====================
