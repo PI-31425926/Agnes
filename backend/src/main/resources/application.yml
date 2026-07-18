@@ -42,6 +42,10 @@ spring:
           max-active: 8
           max-idle: 8
           min-idle: 2
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 50MB
 
 
 aes:
@@ -59,8 +63,8 @@ sa-token:
   # 其他配置可按需调整
 
 oss:
-  endpoint: oss-cn-beijing.aliyuncs.com
-  bucket-name: java-ai-tlias-002
-  access-key-id: YOUR_OSS_ACCESS_KEY_ID
-  access-key-secret: YOUR_OSS_ACCESS_KEY_SECRET
-  cname-url: https://java-ai-tlias-002.oss-cn-beijing.aliyuncs.com
+  endpoint: oss-cn-beijing.aliyuncs.com  # TODO: 填入 OSS Endpoint
+  bucket-name: your-bucket-name          # TODO: 填入 OSS Bucket 名称
+  access-key-id: YOUR_ACCESS_KEY_ID      # TODO: 填入 OSS AccessKey ID
+  access-key-secret: YOUR_ACCESS_KEY_SECRET  # TODO: 填入 OSS AccessKey Secret
+  cname-url: https://your-bucket.oss-cn-beijing.aliyuncs.com  # TODO: 填入自定义域名

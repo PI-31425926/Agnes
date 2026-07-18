@@ -50,8 +50,15 @@
         <textarea :value="nodeData.prompt" @input="onFieldChange('prompt', $event.target.value)" rows="4" class="form-input" placeholder="支持 ${nodeId.field} 变量引用" />
       </div>
 
-      <!-- image nodes -->
-      <template v-if="['text_to_image', 'image_to_image'].includes(type)">
+      <!-- image_to_image -->
+      <div v-if="type === 'image_to_image'" class="form-group">
+        <label>参考图片 URL</label>
+        <input :value="nodeData.image_url || ''" @input="onFieldChange('image_url', $event.target.value)" class="form-input" placeholder="输入图片URL，或点击下方按钮上传" />
+      </div>
+      <div v-if="type === 'image_to_image'" class="form-group">
+        <ImageUploader @uploaded="(url) => onFieldChange('image_url', url)" />
+      </div>
+      <template v-if="type === 'image_to_image'">
         <div class="form-group">
           <label>Prompt</label>
           <textarea :value="nodeData.prompt" @input="onFieldChange('prompt', $event.target.value)" rows="3" class="form-input" placeholder="支持 ${nodeId.field} 变量引用" />
@@ -80,6 +87,15 @@
           <label>Prompt</label>
           <textarea :value="nodeData.prompt" @input="onFieldChange('prompt', $event.target.value)" rows="3" class="form-input" placeholder="支持 ${nodeId.field} 变量引用" />
         </div>
+      </template>
+      <div v-if="type === 'image_to_video'" class="form-group">
+        <label>参考图片 URL</label>
+        <input :value="nodeData.image_url || ''" @input="onFieldChange('image_url', $event.target.value)" class="form-input" placeholder="输入图片URL，或点击下方按钮上传" />
+      </div>
+      <div v-if="type === 'image_to_video'" class="form-group">
+        <ImageUploader @uploaded="(url) => onFieldChange('image_url', url)" />
+      </div>
+      <template v-if="['text_to_video', 'image_to_video'].includes(type)">
         <div class="form-group"><label>宽度</label><input :value="nodeData.width" @input="onFieldChange('width', Number($event.target.value))" type="number" class="form-input" /></div>
         <div class="form-group"><label>高度</label><input :value="nodeData.height" @input="onFieldChange('height', Number($event.target.value))" type="number" class="form-input" /></div>
         <div class="form-group"><label>帧数</label><input :value="nodeData.num_frames" @input="onFieldChange('num_frames', Number($event.target.value))" type="number" class="form-input" /></div>
@@ -90,6 +106,9 @@
       <div v-if="type === 'keyframe_animation'" class="form-group">
         <label>Prompt</label>
         <textarea :value="nodeData.prompt" @input="onFieldChange('prompt', $event.target.value)" rows="2" class="form-input" />
+      </div>
+      <div v-if="type === 'keyframe_animation'" class="form-group">
+        <ImageUploader multiple @uploaded="onKeyframeImageUploaded" />
       </div>
       <div v-if="type === 'keyframe_animation'" class="form-group">
         <label>关键帧图片 (逗号分隔 URL)</label>
@@ -109,6 +128,7 @@
 import { computed, ref } from 'vue'
 import { NODE_TYPES } from './nodeTypes.js'
 import { usePromptRefine } from '../../composables/usePromptRefine.js'
+import ImageUploader from './ImageUploader.vue'
 
 const props = defineProps({
   node: { type: Object, required: true },
@@ -161,6 +181,12 @@ function onFieldChange(field, value) {
 function onImageUrlsChange(val) {
   const urls = val.split(',').map(s => s.trim()).filter(Boolean)
   emit('configUpdate', { image_urls: urls })
+}
+
+function onKeyframeImageUploaded(url) {
+  const currentUrls = nodeData.value.image_urls || []
+  const updated = [...currentUrls, url]
+  emit('configUpdate', { image_urls: updated })
 }
 
 function formatOutput(output) {

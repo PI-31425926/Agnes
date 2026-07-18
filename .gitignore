@@ -22,6 +22,8 @@ Thumbs.db
 # Env
 .env
 .env.*
+application-dev.yml
+application-*.yml
 
 # OpenSpec (optional, keep if unwanted in repo)
 # openspec/
