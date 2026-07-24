@@ -27,6 +27,7 @@
               @click="currentTab = 'video'"
           >🎬 视频</button>
           <button class="tab-btn" @click="goWorkflow">⚡ 工作流</button>
+          <button class="tab-btn" @click="currentTab = 'music'">🎵 音乐</button>
           <button class="logout-btn" @click="logout">🚪 退出</button>
         </div>
         <!-- 管理员入口按钮 -->
@@ -299,6 +300,58 @@
         </div>
       </div>
 
+      <!-- 音乐生成界面 -->
+      <div v-if="currentTab === 'music'" class="music-body">
+        <div class="music-panel">
+          <div class="prompt-area">
+            <div class="options-row">
+              <div class="param-group">
+                <label>风格</label>
+                <select v-model="musicStyle" class="param-select">
+                  <option value="hot">🔥 燃歌 (Hot)</option>
+                  <option value="sad">💧 伤感 (Sad)</option>
+                  <option value="fairy">🧚 仙歌 (Fairy)</option>
+                </select>
+              </div>
+              <div class="param-group"><label>温度</label><input type="number" v-model.number="musicTemperature" class="param-input" min="0.1" max="2.0" step="0.1"/></div>
+              <div class="param-group"><label>长度</label><input type="number" v-model.number="musicOutputLength" class="param-input" min="16" max="512" step="16"/></div>
+              <div class="param-group"><label>BPM</label><input type="number" v-model.number="musicBpm" class="param-input" min="40" max="300"/></div>
+              <div class="param-group">
+                <label>调性</label>
+                <select v-model="musicKey" class="param-select">
+                  <option value="G">G</option>
+                  <option value="C">C</option>
+                </select>
+              </div>
+              <div class="param-group">
+                <label>乐器</label>
+                <input type="text" v-model="musicInstrument" class="param-input" style="width:100px" placeholder="piano"/>
+              </div>
+              <button class="generate-btn" @click="generateMusic" :disabled="musicGenerating">
+                <span v-if="!musicGenerating">⚡ 生成</span>
+                <span v-else>⏳ 生成中...</span>
+              </button>
+            </div>
+            <textarea
+                v-model="musicInputText"
+                placeholder="可选：输入起始简谱文本（留空则随机开始）"
+                rows="2"
+            ></textarea>
+          </div>
+          <div v-if="musicResult" class="result-area">
+            <div class="music-result-text">{{ musicResult.generatedText }}</div>
+            <div class="result-actions">
+              <a href="javascript:void(0)" @click="copyMusicResult" class="action-link">📋 复制简谱</a>
+              <a v-if="musicResult.midiBase64" href="javascript:void(0)" @click="downloadMidi" class="action-link">💾 下载 MIDI</a>
+              <span v-if="musicResult.modelType" class="music-meta">模型: {{ musicResult.modelType }} | 风格: {{ musicResult.style }}</span>
+            </div>
+          </div>
+          <div v-else class="empty-state">
+            <span>🎵 选择风格后点击生成</span>
+          </div>
+        </div>
+      </div>
+
     </div>
   </div>
 </template>
@@ -308,6 +361,7 @@ import { ref, nextTick, watch, computed, onUnmounted, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import request from '@/api/request'
 import { uploadImage as apiUploadImage } from '@/api/chat'
+import { generateMusic as apiGenerateMusic } from '@/api/music'
 
 const currentTab = ref('chat')
 const router = useRouter()
@@ -1321,6 +1375,77 @@ function logout() {
   router.push('/login')
 }
 
+// ==================== 音乐生成 ====================
+const musicStyle = ref('hot')
+const musicTemperature = ref(0.5)
+const musicOutputLength = ref(128)
+const musicBpm = ref(120)
+const musicKey = ref('G')
+const musicInstrument = ref('piano')
+const musicInputText = ref('')
+const musicGenerating = ref(false)
+const musicResult = ref(null)
+
+async function generateMusic() {
+  if (!requireAuth('音乐生成')) return
+  musicGenerating.value = true
+  musicResult.value = null
+  try {
+    const res = await apiGenerateMusic({
+      style: musicStyle.value,
+      temperature: musicTemperature.value,
+      output_length: musicOutputLength.value,
+      bpm: musicBpm.value,
+      key: musicKey.value,
+      instrument: musicInstrument.value,
+      input_text: musicInputText.value || undefined,
+      return_midi: true
+    })
+    if (res && res.generatedText) {
+      musicResult.value = res
+    } else {
+      alert('生成失败：返回数据异常')
+    }
+  } catch (e) {
+    alert('音乐生成失败：' + getErrorMessage(e))
+  } finally {
+    musicGenerating.value = false
+  }
+}
+
+function copyMusicResult() {
+  if (!musicResult.value?.generatedText) return
+  navigator.clipboard.writeText(musicResult.value.generatedText).then(() => {
+    alert('简谱已复制到剪贴板')
+  }).catch(() => {
+    alert('复制失败，请手动选择复制')
+  })
+}
+
+function downloadMidi() {
+  const midiB64 = musicResult.value?.midiBase64
+  if (!midiB64) return
+  try {
+    const byteArrays = []
+    const padded = midiB64.padEnd(midiB64.length + (4 - midiB64.length % 4) % 4, '=')
+    const binaryString = atob(padded)
+    for (let i = 0; i < binaryString.length; i++) {
+      byteArrays.push(binaryString.charCodeAt(i))
+    }
+    const blob = new Blob([new Uint8Array(byteArrays)], { type: 'audio/midi' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'melody.mid'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  } catch (e) {
+    alert('MIDI 下载失败：' + e.message)
+  }
+}
+
 onUnmounted(() => {
   closeVideoWebSocket()
 })
@@ -2155,6 +2280,44 @@ onUnmounted(() => {
 .uploading-indicator {
   color: rgba(0,255,255,0.5);
   font-size: 0.75rem;
+}
+
+/* ===== 音乐生成界面 ===== */
+.music-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+}
+
+.music-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  flex: 1;
+}
+
+.music-result-text {
+  width: 100%;
+  min-height: 120px;
+  max-height: 40vh;
+  overflow-y: auto;
+  padding: 12px;
+  background: rgba(0, 10, 20, 0.8);
+  border: 1px solid rgba(0, 255, 255, 0.4);
+  border-radius: 12px;
+  color: #0ff;
+  font-family: 'Courier New', monospace;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.music-meta {
+  color: rgba(0, 255, 255, 0.6);
+  font-size: 0.8rem;
 }
 
 .input-wrapper {
