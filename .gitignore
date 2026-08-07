@@ -1,6 +1,8 @@
 # Build outputs
 backend/target/
 frontend/dist/
+backend/src/main/resources/static/assets/
+backend/src/main/resources/static/index.html
 
 # IDE
 .idea/
@@ -22,6 +24,7 @@ Thumbs.db
 # Env
 .env
 .env.*
+backend/src/main/resources/application.yml
 application-dev.yml
 application-*.yml
 

@@ -11,7 +11,7 @@ import java.util.Base64;
 
 @Component
 public class AesUtil {
-    @Value("${aes.secret:PRODUCTION_ONLY}")
+    @Value("${aes.secret}")
     private String secretKey;
 
     private static final String GCM_TRANSFORMATION = "AES/GCM/NoPadding";
