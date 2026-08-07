@@ -1,0 +1,18 @@
+"""API 服务配置。"""
+
+# 模型路径
+MODEL_DIR = 'results'
+DEFAULT_STYLE = 'hot'
+DEFAULT_MODEL_TYPE = 'rnn'
+
+# 服务器
+HOST = '0.0.0.0'
+PORT = 8000
+WORKERS = 2
+
+# 生成默认参数
+DEFAULT_OUTPUT_LENGTH = 128
+DEFAULT_TEMPERATURE = 0.5
+DEFAULT_INSTRUMENT = 'piano'
+DEFAULT_KEY = 'G'
+DEFAULT_BPM = 120
