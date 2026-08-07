@@ -8,7 +8,7 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 @NoArgsConstructor
 public class MusicRequest {
-    private String style;          // hot / sad / fairy
+    private String style;          // hot / sad / fairy / midi
     private String inputText;      // 起始简谱文本，可为空
     private Integer outputLength;  // 输出字符数 (16-512)
     private Double temperature;    // 采样温度 (0.1-2.0)

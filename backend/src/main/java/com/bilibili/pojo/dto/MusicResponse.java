@@ -12,4 +12,7 @@ public class MusicResponse {
     private String midiBase64;     // Base64 编码的 MIDI 数据
     private String modelType;      // 使用的模型类型
     private String style;          // 风格
+    private Integer bpm;           // BPM
+    private String key;            // 调性
+    private String instrument;     // 乐器
 }

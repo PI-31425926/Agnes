@@ -311,6 +311,7 @@
                   <option value="hot">🔥 燃歌 (Hot)</option>
                   <option value="sad">💧 伤感 (Sad)</option>
                   <option value="fairy">🧚 仙歌 (Fairy)</option>
+                  <option value="midi">🎹 MIDI (纯音乐)</option>
                 </select>
               </div>
               <div class="param-group"><label>温度</label><input type="number" v-model.number="musicTemperature" class="param-input" min="0.1" max="2.0" step="0.1"/></div>
@@ -333,17 +334,20 @@
               </button>
             </div>
             <textarea
+                v-if="musicStyle !== 'midi'"
                 v-model="musicInputText"
                 placeholder="可选：输入起始简谱文本（留空则随机开始）"
                 rows="2"
             ></textarea>
           </div>
           <div v-if="musicResult" class="result-area">
-            <div class="music-result-text">{{ musicResult.generatedText }}</div>
+            <div v-if="musicResult.generatedText" class="music-result-text">{{ musicResult.generatedText }}</div>
+            <div v-else class="midi-placeholder">🎹 纯音乐已生成，请下载 MIDI 文件</div>
             <div class="result-actions">
               <a href="javascript:void(0)" @click="copyMusicResult" class="action-link">📋 复制简谱</a>
               <a v-if="musicResult.midiBase64" href="javascript:void(0)" @click="downloadMidi" class="action-link">💾 下载 MIDI</a>
               <span v-if="musicResult.modelType" class="music-meta">模型: {{ musicResult.modelType }} | 风格: {{ musicResult.style }}</span>
+              <span v-if="musicResult.bpm" class="music-meta">BPM: {{ musicResult.bpm }} | 调性: {{ musicResult.key }} | 乐器: {{ musicResult.instrument }}</span>
             </div>
           </div>
           <div v-else class="empty-state">
@@ -1398,10 +1402,10 @@ async function generateMusic() {
       bpm: musicBpm.value,
       key: musicKey.value,
       instrument: musicInstrument.value,
-      input_text: musicInputText.value || undefined,
+      input_text: musicStyle.value === 'midi' ? undefined : (musicInputText.value || undefined),
       return_midi: true
     })
-    if (res && res.generatedText) {
+    if (res && (res.generatedText || res.midiBase64)) {
       musicResult.value = res
     } else {
       alert('生成失败：返回数据异常')
@@ -2318,6 +2322,15 @@ onUnmounted(() => {
 .music-meta {
   color: rgba(0, 255, 255, 0.6);
   font-size: 0.8rem;
+}
+
+.midi-placeholder {
+  color: rgba(0, 255, 255, 0.7);
+  font-size: 0.9rem;
+  text-align: center;
+  padding: 16px;
+  border: 1px dashed rgba(0, 255, 255, 0.3);
+  border-radius: 6px;
 }
 
 .input-wrapper {

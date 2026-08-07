@@ -58,6 +58,10 @@ public class MusicService {
                 musicResponse.setMidiBase64((String) body.get("midi_base64"));
                 musicResponse.setModelType((String) body.get("model_type"));
                 musicResponse.setStyle((String) body.get("style"));
+                Object bpmObj = body.get("bpm");
+                if (bpmObj instanceof Number) musicResponse.setBpm(((Number) bpmObj).intValue());
+                musicResponse.setKey((String) body.get("key"));
+                musicResponse.setInstrument((String) body.get("instrument"));
                 return musicResponse;
             }
 
